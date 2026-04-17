@@ -1,0 +1,176 @@
+"""MemoryToolsMixin — musubi_recent, memory_store."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+import aiohttp
+from livekit.agents import Agent, function_tool
+
+from ..musubi_client import (
+    MUSUBI_COLLECTION,
+    MUSUBI_TIMEOUT_S,
+    QDRANT_URL,
+    async_embed_text,
+)
+from ..trace import trace
+
+logger = logging.getLogger("openclaw-livekit.agent")
+
+
+class MemoryToolsMixin(Agent):
+    """Provides musubi_recent and memory_store tools."""
+
+    @function_tool
+    async def musubi_recent(self, hours: int = 24, limit: int = 10) -> str:
+        """Fetch recent memories from all agents in the household.
+
+        Invocation Condition: Invoke this tool whenever the user asks
+        about recent activity, what agents have been doing, what you
+        talked about before, or what's been going on. Also invoke at the
+        start of a call to load context. Examples: "What's everyone been
+        up to?", "What did we talk about yesterday?", "How's the house?"
+        You MUST call this tool before making any claims about recent
+        agent activity or past conversations.
+
+        Args:
+            hours: How many hours back to look (default 24).
+            limit: Maximum number of memories to return (default 10).
+        """
+        trace(f"tool=musubi_recent hours={hours} limit={limit}")
+        cutoff_epoch = time.time() - (hours * 3600)
+        body: dict[str, Any] = {
+            "filter": {
+                "must": [
+                    {
+                        "key": "created_epoch",
+                        "range": {"gte": cutoff_epoch},
+                    }
+                ]
+            },
+            "limit": limit,
+            "with_payload": True,
+            "with_vector": False,
+            "order_by": {"key": "created_epoch", "direction": "desc"},
+        }
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=MUSUBI_TIMEOUT_S)
+            async with aiohttp.ClientSession(timeout=timeout) as http:
+                async with http.post(
+                    f"{QDRANT_URL}/collections/{MUSUBI_COLLECTION}/points/scroll",
+                    json=body,
+                ) as resp:
+                    if resp.status != 200:
+                        text = (await resp.text())[:160]
+                        logger.warning(
+                            "musubi_recent: qdrant %d: %s", resp.status, text
+                        )
+                        return f"Memory service error ({resp.status})."
+                    data = await resp.json()
+        except asyncio.TimeoutError:
+            logger.warning(
+                "musubi_recent: qdrant timed out (%.0fms)", MUSUBI_TIMEOUT_S * 1000
+            )
+            return "Memory lookup timed out."
+        except Exception as err:
+            logger.warning("musubi_recent: %s", err)
+            return f"Memory lookup failed: {err}"
+
+        points = (data.get("result") or {}).get("points") or []
+        if not points:
+            return "No recent memories found."
+
+        lines: list[str] = []
+        for p in points:
+            payload = p.get("payload") or {}
+            agent_name = payload.get("agent") or "?"
+            content = payload.get("content") or ""
+            lines.append(f"[{agent_name}] {content}")
+        return "\n\n".join(lines)
+
+    @function_tool
+    async def memory_store(self, content: str, tags: list[str] | None = None) -> str:
+        """Store a memory to Musubi for future recall between calls.
+
+        Invocation Condition: Invoke this tool whenever the user asks you
+        to remember something, save something for later, or make a note.
+        Also invoke proactively at the end of calls to save important
+        context. Examples: "Remember I have a dentist appointment Tuesday",
+        "Save that for later", "Don't forget about the deploy". You MUST
+        call this tool to store the memory. Saying you'll remember it
+        without calling this tool means the memory is lost.
+
+        Args:
+            content: What to remember. Write it the way you'd want to
+                read it next time — natural language, not raw data.
+            tags: Optional keywords for retrieval (e.g. ['joke', 'eric',
+                'deploy']). Keep them short and relevant.
+        """
+        trace(f"tool=memory_store content={content[:60]!r} tags={tags!r}")
+        if not content.strip():
+            return "Error: content is required."
+
+        tag_list = tags or []
+        agent_name = "nyla-voice"
+
+        try:
+            vector = await async_embed_text(content)
+        except Exception as err:
+            logger.error("memory_store: embedding failed: %s", err)
+            trace(f"tool=memory_store EMBED_FAIL {err}")
+            return "Couldn't store that memory — embedding failed."
+
+        ts = datetime.now(timezone.utc)
+        point_id = str(uuid.uuid4())
+        payload = {
+            "content": content,
+            "type": "user",
+            "agent": agent_name,
+            "tags": tag_list,
+            "context": "",
+            "created_at": ts.isoformat(),
+            "created_epoch": ts.timestamp(),
+            "updated_at": ts.isoformat(),
+            "updated_epoch": ts.timestamp(),
+            "access_count": 0,
+        }
+
+        body = {
+            "points": [
+                {
+                    "id": point_id,
+                    "vector": vector,
+                    "payload": payload,
+                }
+            ]
+        }
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=2)
+            async with aiohttp.ClientSession(timeout=timeout) as http:
+                async with http.put(
+                    f"{QDRANT_URL}/collections/{MUSUBI_COLLECTION}/points",
+                    json=body,
+                    params={"wait": "true"},
+                ) as resp:
+                    if resp.status not in (200, 201):
+                        text = (await resp.text())[:160]
+                        logger.error(
+                            "memory_store: qdrant %d: %s", resp.status, text
+                        )
+                        return "Couldn't store that memory — database error."
+        except asyncio.TimeoutError:
+            logger.warning("memory_store: qdrant timed out")
+            return "Memory store timed out."
+        except Exception as err:
+            logger.error("memory_store: %s", err)
+            return f"Couldn't store that memory: {err}"
+
+        trace(f"tool=memory_store DONE id={point_id}")
+        return "Got it, stored."

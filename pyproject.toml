@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openclaw-livekit-agent-sdk"
+version = "0.1.0"
+description = "Shared tools, clients, and utilities for OpenClaw LiveKit voice agents"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "livekit-agents~=1.5",
+    "aiohttp",
+    "python-dotenv",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
