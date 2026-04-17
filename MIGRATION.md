@@ -1,163 +1,208 @@
-# Migration checklist: Media Streams → SIP
+# Migration checklist: A/B test SIP alongside Media Streams
 
-Execute top-to-bottom. Each section ends with a **stop line** — don't move
-past it until the check passes. Rollback at any point with
+**Strategy:** keep the existing [openclaw-livekit-bridge](https://github.com/ericmey/openclaw-livekit-bridge)
+running, stand up `livekit-sip` in parallel, and point exactly **one
+Twilio DID** at the SIP path while the others stay on the bridge. Agents
+already handle both transports transparently via
+[`resolve_caller()`](https://github.com/ericmey/openclaw-livekit-agent-sdk/blob/main/src/openclaw_livekit_agent_sdk/telephony.py)
+— no per-call branching anywhere. Compare behavior over ~1 week, then
+decide: promote SIP to all lines, or roll back.
+
+Execute top-to-bottom. Each section ends with a **stop line** — don't
+move past it until the check passes. Rollback at any point with
 [docs/rollback.md](docs/rollback.md).
 
-## Phase 0 — Confirm the trigger
+## Phase 0 — Compatibility shim already deployed
 
-Before spending a weekend on this, run the #3379 diagnostic in
-[docs/diagnostic-3379.md](docs/diagnostic-3379.md) against recent
-"odd behavior" calls.
+This was the first thing we shipped, so the rest of the migration is
+infra work only. Confirm it's live:
 
-- [ ] Collected ≥ 3 CallSids from calls where the agent acted weird
-- [ ] Cross-referenced Twilio Voice Insights with bridge logs
-- [ ] Decision: frame-count mismatch confirmed → proceed. No mismatch →
-      park this migration, investigate agent-side (prompt/VAD/model).
+- [ ] `openclaw-livekit-agent-sdk` has `src/openclaw_livekit_agent_sdk/telephony.py`
+      (module `resolve_caller`)
+- [ ] aoi / nyla / party entrypoints call `resolve_caller(ctx)` instead
+      of parsing `ctx.job.metadata` directly
+- [ ] All agent venvs rebuilt from current SDK: `make install-voice-agents`
+- [ ] All agent launchd plists cycled (`bootout` + `bootstrap`)
+- [ ] One smoke call through the existing bridge — agent logs show
+      `caller resolved ... source=bridge` and the call works normally
 
-**Stop until decision is made.**
+**Stop:** bridge still behaves identically to before the SDK refactor.
 
-## Phase 1 — Infrastructure stand-up (can do in isolation, no Twilio yet)
+## Phase 1 — Infrastructure stand-up (no Twilio yet)
 
-### 1.1 Redis
+Run the setup script:
 
-- [ ] Install Redis (`brew install redis` or Docker). No HA needed for
-      single-machine deploy.
-- [ ] Confirm reachable at `127.0.0.1:6379`
-- [ ] Add launchd plist if running natively (sample in `config/`)
+```bash
+./scripts/setup-infra.sh
+```
 
-### 1.2 livekit-sip binary
+This installs Redis (via brew + services), installs `lk` CLI, and pulls
+the `livekit/sip` Docker image. Idempotent — safe to re-run.
 
-Two options — Docker is simpler, native is faster to iterate on.
+- [ ] `redis-cli ping` returns `PONG`
+- [ ] `lk --version` prints a version
+- [ ] `docker images livekit/sip` lists the image
+- [ ] `~/.openclaw/config/livekit-sip.yaml` exists — edit `api_key`,
+      `api_secret`, `ws_url` to match your LiveKit server
 
-**Docker (recommended first attempt):**
-- [ ] `docker pull livekit/sip:latest`
-- [ ] Copy `config/livekit-sip.yaml.example` to `~/.openclaw/config/livekit-sip.yaml`
-- [ ] Fill in real LiveKit API key / secret from the existing server
-- [ ] Start with host networking: `docker run --network=host -v ~/.openclaw/config/livekit-sip.yaml:/config.yaml livekit/sip --config /config.yaml`
+**Stop:** `lk sip trunk list` runs without error (returns empty list; that's fine).
 
-**Native (for production):**
-- [ ] `brew install pkg-config opus opusfile libsoxr`
-- [ ] `git clone https://github.com/livekit/sip && cd sip && mage build`
-- [ ] Copy binary to `/usr/local/bin/livekit-sip`
-- [ ] Copy launchd plist template from `config/launchd.plist.example`
+## Phase 2 — Start livekit-sip (foreground first, launchd later)
 
-### 1.3 livekit-server readiness
+In a dedicated terminal so you can watch logs:
 
-- [ ] Confirm version recent enough (check release notes — SIP dispatch
-      rules need 1.5+)
-- [ ] Redis connection added to `livekit.yaml` if not already present
-      (livekit-sip ↔ livekit-server communicate over Redis)
+```bash
+docker run --rm --network=host \
+  -v ~/.openclaw/config/livekit-sip.yaml:/config.yaml:ro \
+  livekit/sip:latest --config /config.yaml
+```
 
-### 1.4 `lk` CLI
+You should see startup logs mentioning Redis connection, LiveKit server
+handshake, SIP listener bound on 5060.
 
-- [ ] `brew install livekit-cli`
-- [ ] `lk cloud auth` (if using Cloud) or point at local: `export LIVEKIT_URL=... LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=...`
-- [ ] `lk sip --help` returns cleanly
+- [ ] No errors in the first 10 seconds of startup
+- [ ] `lsof -iUDP:5060 -n -P` shows Docker listening
+- [ ] LiveKit server logs (wherever yours go) show the new agent
+      connection from livekit-sip
 
-**Stop:** `lk sip trunk list` returns an empty list without error. Infrastructure works, just empty.
+**Stop:** livekit-sip runs cleanly. Leave it running — don't CTRL-C yet.
 
-## Phase 2 — Twilio Elastic SIP Trunk
+## Phase 3 — Twilio Elastic SIP Trunk
 
-Do this in the Twilio console. Full walkthrough in
-[docs/twilio-trunk.md](docs/twilio-trunk.md).
+Full walkthrough in [docs/twilio-trunk.md](docs/twilio-trunk.md).
 
-- [ ] Create a new Elastic SIP Trunk (separate from Programmable Voice)
-- [ ] Configure Origination Connection Policy pointing at your public
-      `livekit-sip` endpoint (`sip://<public-host>:5060;transport=tcp`)
-- [ ] Create a SIP Credential List for termination auth
-- [ ] Attach one of your existing Twilio numbers to the new trunk
-- [ ] Note down: trunk SID, origination URI, termination credentials
-- [ ] Configure IP allowlist to include Twilio's SBC ranges
-- [ ] Lock codec to **G.711 µ-law (PCMU)** only
+- [ ] Create a new Elastic SIP Trunk in Twilio console (keep separate
+      from your existing Programmable Voice setup)
+- [ ] Origination Connection Policy points at your public
+      `livekit-sip` endpoint (`sip://<your-host>:5060;transport=tcp`)
+- [ ] Credential list created for termination auth
+- [ ] **Attach ONE test DID** to the trunk. Pick a low-traffic number
+      — do NOT attach all your production DIDs. The others stay on
+      Programmable Voice → bridge for now.
+- [ ] Lock codec to PCMU (G.711 µ-law)
+- [ ] Record trunk SID, origination URI, termination credentials
 
-**Stop:** Twilio console shows the trunk as configured, one DID attached, no warnings.
+**Stop:** Twilio shows the trunk configured, ONE DID attached, no warnings.
 
-## Phase 3 — Inbound trunk + dispatch rules in LiveKit
+## Phase 4 — Register inbound trunk + dispatch rule
 
-- [ ] Register the Twilio trunk with livekit-sip:
-      ```bash
-      lk sip trunk create inbound \
-        --name "twilio-primary" \
-        --numbers "+1...YOUR-DID..." \
-        --auth-user "<from-twilio-credlist>" \
-        --auth-pass "<from-twilio-credlist>"
-      ```
-      Save the returned trunk ID.
-- [ ] Create a dispatch rule mapping the DID to an agent:
-      ```bash
-      lk sip dispatch create config/dispatch-rule-per-call.json \
-        --trunks "<trunk-id>"
-      ```
-      (Edit the JSON first — `agentName` field picks which Python worker dispatches.)
-- [ ] Verify with `lk sip trunk list` and `lk sip dispatch list`
+```bash
+# Edit config/dispatch-rule-per-call.json.example:
+#   - Replace +15550000000 with your actual test DID
+#   - Set agentName (recommendation: phone-nyla for the first test)
+#   - Save as dispatch-rule-per-call.local.json (gitignored)
 
-**Stop:** Both lists show the new entries.
+# Register the trunk:
+lk sip trunk create inbound \
+  --name "twilio-primary" \
+  --numbers "+1YOUR_TEST_DID" \
+  --auth-user "openclaw-sip" \
+  --auth-pass "<from-twilio-credlist>"
 
-## Phase 4 — Agent-side patches
+# Note the returned trunk ID (e.g. ST_xxxxxxxx)
+# Then register the dispatch rule:
+lk sip dispatch create config/dispatch-rule-per-call.local.json \
+  --trunks "<trunk-id-from-above>"
 
-See [docs/agent-changes.md](docs/agent-changes.md) for exact diffs.
+# Verify:
+lk sip trunk list
+lk sip dispatch list
+```
 
-- [ ] Patch `openclaw-livekit-agent-nyla/src/_shared.py` to read
-      `participant.attributes["sip.from"]` instead of `ctx.job.metadata.from`
-- [ ] Patch `openclaw-livekit-agent-aoi/src/agent.py` (inline equivalent)
-- [ ] Patch `openclaw-livekit-agent-party/src/agent.py`
-- [ ] Keep a compatibility branch on each: if metadata has `from`, use
-      it (bridge path); else use `sip.from` (SIP path). This lets
-      agents run under either bridge or SIP during cutover.
-- [ ] Rebuild locks, cycle each agent's launchd plist
+**Stop:** both `list` commands show the new entries.
 
-**Stop:** All three agents restart cleanly; text-only test (`make verify-voice-agents`) passes.
+## Phase 5 — First real SIP call
 
-## Phase 5 — First real call, single number
+Pre-flight:
 
-- [ ] Call the DID on the new SIP trunk from your cell phone
-- [ ] Watch `livekit-sip` logs — should see SIP INVITE, room creation, agent dispatch
-- [ ] Agent answers, conversation holds for ≥ 60 seconds
-- [ ] Hang up cleanly — no orphaned rooms, no launchd restart
+- [ ] Bridge still running (`launchctl print gui/$(id -u)/ai.openclaw.livekit-bridge` reports `running`)
+- [ ] livekit-sip still running (foreground terminal from Phase 2)
+- [ ] All three Python agents still running
 
-**Stop:** One real call end-to-end works.
+Call the test DID from your cell. Expected timeline:
 
-## Phase 6 — Outbound migration
+1. Twilio routes the call to the SIP trunk
+2. livekit-sip logs show SIP INVITE received
+3. Dispatch rule matches → LiveKit server creates a room
+4. Agent (`phone-nyla` per the dispatch rule) gets dispatched into the room
+5. Agent's log line: `phone-nyla caller resolved: from=+1... call_id=... source=sip`
+6. Agent greets you, conversation proceeds
 
-- [ ] Create outbound trunk in Twilio (can reuse the same trunk; outbound
-      direction just needs termination creds)
-- [ ] Register outbound trunk with `lk sip trunk create outbound`
-- [ ] Replace the bridge's `POST /voice/outbound` with a small
-      `CreateSIPParticipant` call — this can live in the agent's tool
-      set, or in a thin wrapper service. Recommendation: keep it as an
-      SDK tool (`openclaw_request`-style), not a separate service.
-- [ ] Test outbound to the hard-coded `OUTBOUND_ALLOWED_DESTINATION`
+- [ ] Call connects within 3 seconds
+- [ ] Two-way audio, no drops, no one-way audio
+- [ ] Agent behavior feels normal (no #3379-style weirdness)
+- [ ] Hangup is clean — no orphaned rooms
+- [ ] Agent log confirms `source=sip`
 
-**Stop:** Outbound works, destination arrival matches expected caller ID.
+Make at least 3 calls across different times of day before declaring victory.
 
-## Phase 7 — Cutover
+**Stop:** SIP path works end-to-end on the test DID.
 
-- [ ] Point all Twilio DIDs at the new SIP trunk
-- [ ] Watch the next 5-10 real calls live
-- [ ] `launchctl bootout` the bridge plist (leave it on disk — do NOT
-      delete). Leave disabled for at least 2 weeks.
-- [ ] Announce cutover in your personal log / memory
+## Phase 6 — A/B window (1 week minimum)
 
-**Stop:** SIP is primary. Bridge is dormant but available.
+Live with both transports running side-by-side. Call the SIP DID when
+you want to test SIP; call any other DID for the bridge path.
 
-## Phase 8 — Cleanup (2 weeks post-cutover)
+**What to track** (eyeball in logs; formal metrics optional):
 
-- [ ] No rollback needed? Archive the bridge repo (GitHub → Settings → Archive)
-- [ ] Delete `OUTBOUND_*` env vars from bridge plist (leave the plist file for history)
-- [ ] Merge agent compatibility branches — drop the dual metadata path,
-      keep only the SIP shape
-- [ ] Update this repo's README status from "planned" to "deployed"
+- Subjective: does the agent feel "better" on SIP calls vs bridge calls?
+- Objective per call (grep agent logs):
+  - Count of "caller resolved source=bridge" vs "source=sip"
+  - Any errors/warnings during the call
+  - Call duration vs what you remember subjectively
+- Agent-level:
+  - VAD behavior — fewer spurious turn-endings?
+  - STT transcript completeness
+  - Gemini "I didn't catch that" / "can you repeat" frequency
 
-Done.
+**Decision criteria after 1 week:**
 
-## Rollback triggers
+| Observation                                                      | Move |
+|------------------------------------------------------------------|------|
+| SIP calls subjectively better, no new failure modes              | Promote SIP (Phase 7) |
+| SIP calls equal to bridge, no new failure modes                  | Promote SIP — less bridge code to maintain |
+| SIP introduces new failure modes                                 | Diagnose + extend A/B, don't promote yet |
+| SIP worse than bridge (e.g., SIP-specific audio issues)          | Park — keep infrastructure available, but don't promote |
 
-Abort and run [docs/rollback.md](docs/rollback.md) if any of these hit
-during Phase 5-7:
+**Stop:** you have data + a decision.
 
-- One-way audio on more than 1 call
-- Calls succeeding but agents never being dispatched
-- Codec negotiation failures in livekit-sip logs
+## Phase 7 — Promote (once decision is "go")
+
+- [ ] Move `livekit-sip` from foreground Docker to launchd
+      (`config/launchd.plist.example` as a starting point)
+- [ ] Re-point remaining Twilio DIDs at the SIP trunk, one at a time
+      over a few days so blast radius is bounded
+- [ ] Do NOT delete the bridge plist yet — see Phase 8
+
+**Stop:** all DIDs now route via SIP. Bridge still available.
+
+## Phase 8 — Cleanup (2 weeks post-promotion)
+
+Only run this if Phase 7 has been stable for 2+ weeks.
+
+- [ ] `launchctl bootout` the bridge plist; keep the file on disk
+- [ ] Archive the [openclaw-livekit-bridge](https://github.com/ericmey/openclaw-livekit-bridge)
+      repo (GitHub → Settings → Archive) with a README note pointing
+      here
+- [ ] Delete bridge-specific env vars from anywhere they're set
+- [ ] Agent entrypoints: optionally simplify by dropping the bridge
+      path inside `resolve_caller()` (or leave it — the code is tiny and
+      keeping it means the SDK stays transport-agnostic for any future
+      alternative)
+
+Done. Update this repo's README status from "planned" to "deployed."
+
+## Rollback triggers during Phase 5-7
+
+Abort and run [docs/rollback.md](docs/rollback.md) if any of these hit:
+
+- One-way audio on more than one SIP call
+- SIP calls succeeding but agents never dispatched
+- Codec negotiation failures recurring in livekit-sip logs
 - Twilio rejects SIP INVITE with 5xx repeatedly
 - Redis crashes and doesn't come back cleanly
+- Any symptom that looks unfamiliar and can't be diagnosed in 15 min
+
+Rollback is cheap — it's literally repointing one DID in the Twilio
+console back to Programmable Voice. The agents need no changes since
+they already handle both transports.
