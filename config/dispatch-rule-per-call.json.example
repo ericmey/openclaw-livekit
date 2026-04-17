@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Dispatch rule template — one room per call, routed by DID to a specific agent.",
+    "",
+    "Each DID in `inbound_numbers` gets its own dedicated agent (via the",
+    "`agentName` in `roomConfig.agents`). Use one of these rules per",
+    "agent. Example: one for phone-nyla, one for phone-aoi.",
+    "",
+    "Apply with:",
+    "  lk sip dispatch create config/dispatch-rule-per-call.json --trunks <trunk-id>",
+    "",
+    "Fields to edit before applying:",
+    "  - `name` : human-readable label shown in `lk sip dispatch list`",
+    "  - `rule.dispatchRuleIndividual.roomPrefix` : rooms will be named <prefix>-<random>",
+    "  - `inbound_numbers` : DID(s) this rule matches on (E.164)",
+    "  - `roomConfig.agents[0].agentName` : which Python worker joins (phone-nyla | phone-aoi | phone-party)",
+    "  - `roomConfig.agents[0].metadata` : JSON string passed as ctx.job.metadata on the agent side",
+    "",
+    "Docs: https://docs.livekit.io/sip/dispatch-rule/"
+  ],
+
+  "name": "twilio-to-phone-nyla",
+
+  "rule": {
+    "dispatchRuleIndividual": {
+      "roomPrefix": "phone"
+    }
+  },
+
+  "inbound_numbers": [
+    "+15550000000"
+  ],
+
+  "roomConfig": {
+    "agents": [
+      {
+        "agentName": "phone-nyla",
+        "metadata": "{\"route\": \"default\", \"source\": \"sip\"}"
+      }
+    ]
+  }
+}

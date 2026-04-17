@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd plist template for native livekit-sip (not Docker).
+
+  Install:
+    1. cp this file to ~/Library/LaunchAgents/ai.openclaw.livekit-sip.plist
+    2. Edit the paths and the REPLACE_ME lines
+    3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.livekit-sip.plist
+
+  Cycle:
+    launchctl bootout  gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.livekit-sip.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.livekit-sip.plist
+
+  Assumes:
+    - livekit-sip binary at /usr/local/bin/livekit-sip (built from github.com/livekit/sip)
+    - Config file at ~/.openclaw/config/livekit-sip.yaml
+    - Redis running separately (its own plist)
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.openclaw.livekit-sip</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/livekit-sip</string>
+        <string>--config</string>
+        <string>/Users/REPLACE_ME_USERNAME/.openclaw/config/livekit-sip.yaml</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/REPLACE_ME_USERNAME/.openclaw/logs/voice/livekit-sip.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/REPLACE_ME_USERNAME/.openclaw/logs/voice/livekit-sip.log</string>
+
+    <!-- Environment. Secrets can go here OR in the YAML config. Prefer
+         one or the other; duplicating invites drift. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Example secret override (remove if secrets are in the YAML):
+        <key>LIVEKIT_API_KEY</key>
+        <string>REPLACE_ME</string>
+        <key>LIVEKIT_API_SECRET</key>
+        <string>REPLACE_ME</string>
+        -->
+    </dict>
+
+    <!-- Resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+
+    <!-- Throttle restarts so a crash-loop doesn't hammer the machine. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
