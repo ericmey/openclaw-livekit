@@ -88,8 +88,9 @@ class TestPersona:
         content = prompt_path.read_text(encoding="utf-8")
         assert "Nyla" in content, "Persona must mention Nyla"
 
-    def test_load_persona_function(self, agent_module):
-        persona = agent_module._load_persona()
+    def test_load_persona_function(self):
+        from _shared import load_persona
+        persona = load_persona()
         assert isinstance(persona, str)
         assert len(persona) > 100
         assert "Nyla" in persona

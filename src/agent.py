@@ -6,7 +6,6 @@ see agent_text.py (registers as "phone-nyla-text").
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from livekit.agents.worker import AgentServer
 
 from openclaw_livekit_agent_sdk.postcall import wire_postcall_review
 from openclaw_livekit_agent_sdk.telemetry import wire_telemetry_capture
+from openclaw_livekit_agent_sdk.telephony import resolve_caller
 from openclaw_livekit_agent_sdk.trace import trace
 from openclaw_livekit_agent_sdk.transcript import wire_transcript_logging
 
@@ -31,18 +31,19 @@ server = AgentServer(port=8081)
 
 @server.rtc_session(agent_name="phone-nyla")
 async def entrypoint(ctx: JobContext) -> None:
-    meta = json.loads(ctx.job.metadata or "{}") if ctx.job.metadata else {}
-    caller_from = meta.get("from")
-    call_sid = meta.get("callSid")
-
-    logger.info(
-        "phone-nyla entrypoint: room=%s caller=%s",
-        ctx.room.name,
-        caller_from,
-    )
-    trace(f"entrypoint room={ctx.room.name} caller={caller_from!r}")
+    logger.info("phone-nyla entrypoint: room=%s", ctx.room.name)
+    trace(f"entrypoint room={ctx.room.name}")
 
     await ctx.connect()
+
+    caller = await resolve_caller(ctx)
+    caller_from = caller.caller_from
+    call_sid = caller.call_id
+    logger.info(
+        "phone-nyla caller resolved: from=%s call_id=%s source=%s",
+        caller_from, call_sid, caller.source,
+    )
+    trace(f"caller source={caller.source} from={caller_from!r} call_id={call_sid!r}")
 
     agent = NylaAgent(
         instructions=load_persona(),

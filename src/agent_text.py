@@ -7,7 +7,6 @@ If text works and voice doesn't, the bug is in the audio path.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from livekit.agents import AgentSession, JobContext, cli
@@ -15,6 +14,7 @@ from livekit.agents.voice.room_io import RoomOptions
 from livekit.agents.worker import AgentServer
 
 from openclaw_livekit_agent_sdk.telemetry import wire_telemetry_capture
+from openclaw_livekit_agent_sdk.telephony import resolve_caller
 from openclaw_livekit_agent_sdk.trace import trace
 from openclaw_livekit_agent_sdk.transcript import wire_transcript_logging
 
@@ -32,18 +32,19 @@ server = AgentServer(port=8083)
 @server.rtc_session(agent_name="phone-nyla-text")
 async def entrypoint_text(ctx: JobContext) -> None:
     """Text-only variant — same model, same tools, no audio I/O."""
-    meta = json.loads(ctx.job.metadata or "{}") if ctx.job.metadata else {}
-    caller_from = meta.get("from")
-    call_sid = meta.get("callSid")
-
-    logger.info(
-        "phone-nyla-text entrypoint: room=%s caller=%s",
-        ctx.room.name,
-        caller_from,
-    )
-    trace(f"entrypoint-text room={ctx.room.name} caller={caller_from!r}")
+    logger.info("phone-nyla-text entrypoint: room=%s", ctx.room.name)
+    trace(f"entrypoint-text room={ctx.room.name}")
 
     await ctx.connect()
+
+    caller = await resolve_caller(ctx)
+    caller_from = caller.caller_from
+    call_sid = caller.call_id
+    logger.info(
+        "phone-nyla-text caller resolved: from=%s call_id=%s source=%s",
+        caller_from, call_sid, caller.source,
+    )
+    trace(f"caller-text source={caller.source} from={caller_from!r} call_id={call_sid!r}")
 
     agent = NylaAgent(
         instructions=load_persona(),
