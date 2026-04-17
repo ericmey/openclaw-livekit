@@ -12,7 +12,6 @@ at session start (sends tools without a preceding user turn).
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
@@ -29,6 +28,7 @@ from openclaw_livekit_agent_sdk.tools.core import CoreToolsMixin
 from openclaw_livekit_agent_sdk.tools.memory import MemoryToolsMixin
 from openclaw_livekit_agent_sdk.tools.sessions import SessionsToolsMixin
 from openclaw_livekit_agent_sdk.tools.academy import AcademyToolsMixin
+from openclaw_livekit_agent_sdk.telephony import resolve_caller
 from openclaw_livekit_agent_sdk.trace import trace
 from openclaw_livekit_agent_sdk.transcript import wire_transcript_logging
 
@@ -82,18 +82,19 @@ server = AgentServer(port=8083)
 
 @server.rtc_session(agent_name="phone-party")
 async def entrypoint(ctx: JobContext) -> None:
-    meta = json.loads(ctx.job.metadata or "{}") if ctx.job.metadata else {}
-    caller_from = meta.get("from")
-    call_sid = meta.get("callSid")
-
-    logger.info(
-        "phone-party entrypoint: room=%s caller=%s",
-        ctx.room.name,
-        caller_from,
-    )
-    trace(f"entrypoint room={ctx.room.name} caller={caller_from!r}")
+    logger.info("phone-party entrypoint: room=%s", ctx.room.name)
+    trace(f"entrypoint room={ctx.room.name}")
 
     await ctx.connect()
+
+    caller = await resolve_caller(ctx)
+    caller_from = caller.caller_from
+    call_sid = caller.call_id
+    logger.info(
+        "phone-party caller resolved: from=%s call_id=%s source=%s",
+        caller_from, call_sid, caller.source,
+    )
+    trace(f"caller source={caller.source} from={caller_from!r} call_id={call_sid!r}")
 
     stt = openai_plugin.STT(
         model="whisper-1",
