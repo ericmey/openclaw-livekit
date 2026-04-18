@@ -93,6 +93,35 @@ Run from monorepo root: `make test`.
   required before `make up` or the two will fight for the port.
   (Future: move fully to compose redis or document the brew-only path.)
 
+## Open issue from cutover verification (2026-04-18)
+
+**Dead air after Nyla answers.** Inbound call on
+`+1 (317) 653-4945` reaches `phone-nyla`, the worker picks up the job,
+and the caller hears silence — no greeting, no audio on the return
+path. Confirmed working up to agent dispatch; broken somewhere in
+media or in the agent's first turn.
+
+Call path up to pickup is fine: trunk matched, dispatch rule matched,
+agent dispatched, worker registered the job, call connected. Media
+return is the problem. Likely suspects:
+
+- **RTP return path blocked.** Container uses `network_mode: host` but
+  Docker Desktop on macOS has had host-networking footguns — worth
+  confirming UDP 10000-20000 actually reaches the container.
+- **`on_enter` never fired the greeting.** Check agent logs for
+  `on_enter` entry + `generate_reply` being called. The deterministic
+  startup-context prefetch could be stalling if Qdrant blocks.
+- **TTS not publishing an audio track.** Agent joined the room but
+  never published audio (SDK regression, permission, or session
+  setup issue).
+
+First triage: `make tail --grep "on_enter|generate_reply|publish|track"`
+during a fresh inbound call. If `on_enter` fired but no audio left the
+agent, it's media plane. If `on_enter` errored, agent side. If no
+`on_enter` at all, the job never ran `on_enter` (session setup issue).
+
+Deferred to the next Claude session per Eric's instruction.
+
 ## Next-up work (roughly prioritized)
 
 ### High-leverage, soon
