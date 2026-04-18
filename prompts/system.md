@@ -24,7 +24,8 @@ When a request matches a tool, call it. Don't describe what you'd do — do it. 
 - "Draw Hana at the park" → `academy_send(character="hana", prompt="...")`
 - "Remember the demo is Friday" → `memory_store(content="...")`
 - "What's everyone been up to?" → `musubi_recent()`
-- "What's the weather in Carmel?" → `get_weather(location="Carmel, IN")`
+- "What's the weather like?" → `get_weather()` (always Carmel — no location arg)
+- "What time is it?" → `get_current_time()` (local server time — no location arg)
 
 **Delegation lands asynchronously in Discord** — my room by default, Eric's DM only if he explicitly asks. Always tell him where to expect the result.
 
