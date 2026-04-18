@@ -82,6 +82,18 @@ class TestAgentClass:
         assert cfg.memory_agent_tag == "aoi-voice"
         assert cfg.discord_room.startswith("channel:")
 
+    def test_config_delegation_allowlist_matches_persona(self, agent_module):
+        """Aoi's prompt commits to specific default routing — research to
+        Yumi, ops to Rin, code to herself, inbox to Momo, handoff to Nyla.
+        Creative/image work (Hana, Tama) is deliberately OFF the list so
+        she's forced to route those back through Nyla instead of doing them."""
+        cfg = agent_module.AoiAgent.config
+        allowed = cfg.allowed_delegation_targets
+        assert allowed is not None, "Aoi should have a bounded delegation set"
+        assert {"yumi", "rin", "aoi", "momo", "nyla"} <= allowed
+        assert "hana" not in allowed
+        assert "tama" not in allowed
+
 
 class TestPersona:
     """Verify persona loading from prompts/system.md."""
