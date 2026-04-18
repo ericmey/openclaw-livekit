@@ -24,7 +24,18 @@ logger = logging.getLogger("openclaw-livekit.agent")
 
 
 class MemoryToolsMixin(Agent):
-    """Provides musubi_recent and memory_store tools."""
+    """Provides musubi_recent and memory_store tools.
+
+    Concrete agent classes should override ``memory_agent_tag`` to label
+    stored memories with their voice identity. Defaults to ``"nyla-voice"``
+    so any voice agent that doesn't explicitly re-identify attributes
+    its memories to the shared household Nyla-voice bucket.
+    """
+
+    #: Per-agent override. Stored memories get tagged with this value in
+    #: their ``payload.agent`` field, which is how the household's memory
+    #: ingestion separates voices.
+    memory_agent_tag: str = "nyla-voice"
 
     @function_tool
     async def musubi_recent(self, hours: int = 24, limit: int = 10) -> str:
@@ -117,7 +128,7 @@ class MemoryToolsMixin(Agent):
             return "Error: content is required."
 
         tag_list = tags or []
-        agent_name = "nyla-voice"
+        agent_name = self.memory_agent_tag
 
         try:
             vector = await async_embed_text(content)
