@@ -6,11 +6,10 @@ Registers as "phone-party" with LiveKit. Uses separate components:
   - LLM: Gemini 3.1 Flash Lite Preview (text model, not multimodal)
   - TTS: ElevenLabs eleven_v3
 
-Bare-bones for the first multi-agent room iteration: only EndCallTool
-attached. Tool mixins (CoreToolsMixin, MemoryToolsMixin, etc.) are
-deliberately NOT inherited yet — Harem World will get its own dedicated
-tool set as the multi-agent design solidifies. Until then this agent
-just talks and ends the call.
+Inherits the full OpenClaw platform tool set (Core, Memory, Sessions,
+Academy). memory_agent_tag defaults to ``"nyla-voice"`` because the
+Harem World line is Nyla-on-chained-pipeline — same person, different
+voice engine. Override when/if Party gets its own identity.
 
 Greeting uses session.say() — Gemini text LLM rejects generate_reply()
 at session start (sends tools without a preceding user turn).
@@ -31,6 +30,10 @@ from livekit.plugins import silero as silero_plugin
 
 from openclaw_livekit_agent_sdk.env import load_env
 from openclaw_livekit_agent_sdk.telephony import resolve_caller
+from openclaw_livekit_agent_sdk.tools.academy import AcademyToolsMixin
+from openclaw_livekit_agent_sdk.tools.core import CoreToolsMixin
+from openclaw_livekit_agent_sdk.tools.memory import MemoryToolsMixin
+from openclaw_livekit_agent_sdk.tools.sessions import SessionsToolsMixin
 from openclaw_livekit_agent_sdk.trace import trace
 from openclaw_livekit_agent_sdk.transcript import wire_transcript_logging
 
@@ -58,8 +61,18 @@ def _load_persona() -> str:
 
 
 # --- agent class -------------------------------------------------------
-class PartyAgent(Agent):
-    """Bare-bones Harem World agent. No tool mixins yet — see module docstring."""
+class PartyAgent(
+    CoreToolsMixin,
+    MemoryToolsMixin,
+    SessionsToolsMixin,
+    AcademyToolsMixin,
+    Agent,
+):
+    """Harem World agent with full OpenClaw platform tool set.
+
+    Uses the default ``memory_agent_tag = "nyla-voice"`` since the
+    Harem World line is Nyla on the chained pipeline.
+    """
 
     def __init__(
         self,

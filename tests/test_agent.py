@@ -1,4 +1,4 @@
-"""Tests for the Party voice agent (chained STT/LLM/TTS)."""
+"""Tests for the Party voice agent (chained STT/LLM/TTS, Harem World line)."""
 
 import importlib
 from pathlib import Path
@@ -30,32 +30,47 @@ class TestModuleExports:
 
 
 class TestAgentClass:
-    """Verify the bare-bones PartyAgent class. No tool mixins yet (see agent.py)."""
+    """Verify the PartyAgent class composition."""
 
-    def test_inherits_only_agent(self, agent_module):
-        from livekit.agents import Agent
-        assert issubclass(agent_module.PartyAgent, Agent)
-
-    def test_no_tool_mixins(self, agent_module):
-        """Harem World v1 deliberately ships with no SDK tool mixins."""
+    def test_inherits_core_tools(self, agent_module):
         from openclaw_livekit_agent_sdk.tools.core import CoreToolsMixin
+        assert issubclass(agent_module.PartyAgent, CoreToolsMixin)
+
+    def test_inherits_memory_tools(self, agent_module):
         from openclaw_livekit_agent_sdk.tools.memory import MemoryToolsMixin
+        assert issubclass(agent_module.PartyAgent, MemoryToolsMixin)
+
+    def test_inherits_sessions_tools(self, agent_module):
         from openclaw_livekit_agent_sdk.tools.sessions import SessionsToolsMixin
+        assert issubclass(agent_module.PartyAgent, SessionsToolsMixin)
+
+    def test_inherits_academy_tools(self, agent_module):
         from openclaw_livekit_agent_sdk.tools.academy import AcademyToolsMixin
-        for mixin in (CoreToolsMixin, MemoryToolsMixin, SessionsToolsMixin, AcademyToolsMixin):
-            assert not issubclass(agent_module.PartyAgent, mixin), \
-                f"PartyAgent unexpectedly inherits {mixin.__name__}"
+        assert issubclass(agent_module.PartyAgent, AcademyToolsMixin)
+
+    def test_memory_tag_is_nyla_voice(self, agent_module):
+        """Harem World line stores memories under the Nyla-voice bucket."""
+        assert agent_module.PartyAgent.memory_agent_tag == "nyla-voice"
 
     def test_construction_with_defaults(self, agent_module):
         agent = agent_module.PartyAgent(instructions="test")
         assert agent._caller_from is None
 
-    def test_construction_with_caller(self, agent_module):
-        agent = agent_module.PartyAgent(
-            instructions="test",
-            caller_from="+13175551234",
-        )
-        assert agent._caller_from == "+13175551234"
+    def test_all_nine_tools_present(self, agent_module):
+        agent = agent_module.PartyAgent(instructions="test")
+        expected = [
+            "get_current_time", "get_weather",
+            "musubi_recent", "memory_store",
+            "sessions_send", "sessions_spawn", "schedule_callback",
+            "academy_selfie", "academy_send",
+        ]
+        for tool in expected:
+            assert hasattr(agent, tool), f"Missing tool: {tool}"
+
+    def test_openclaw_request_absent(self, agent_module):
+        agent = agent_module.PartyAgent(instructions="test")
+        attr = getattr(agent, "openclaw_request", None)
+        assert not callable(attr), "openclaw_request was deleted in SDK cleanup"
 
 
 class TestPersona:
