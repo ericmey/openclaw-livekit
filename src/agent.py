@@ -1,10 +1,16 @@
-"""Party voice agent — chained STT/LLM/TTS baseline.
+"""Party voice agent — chained STT/LLM/TTS, the Harem World line.
 
 Registers as "phone-party" with LiveKit. Uses separate components:
   - STT: OpenAI Whisper-1 (non-streaming, needs Silero VAD)
   - VAD: Silero (segments caller audio into utterances for Whisper)
   - LLM: Gemini 3.1 Flash Lite Preview (text model, not multimodal)
   - TTS: ElevenLabs eleven_v3
+
+Bare-bones for the first multi-agent room iteration: only EndCallTool
+attached. Tool mixins (CoreToolsMixin, MemoryToolsMixin, etc.) are
+deliberately NOT inherited yet — Harem World will get its own dedicated
+tool set as the multi-agent design solidifies. Until then this agent
+just talks and ends the call.
 
 Greeting uses session.say() — Gemini text LLM rejects generate_reply()
 at session start (sends tools without a preceding user turn).
@@ -24,10 +30,6 @@ from livekit.plugins import openai as openai_plugin
 from livekit.plugins import silero as silero_plugin
 
 from openclaw_livekit_agent_sdk.env import load_env
-from openclaw_livekit_agent_sdk.tools.core import CoreToolsMixin
-from openclaw_livekit_agent_sdk.tools.memory import MemoryToolsMixin
-from openclaw_livekit_agent_sdk.tools.sessions import SessionsToolsMixin
-from openclaw_livekit_agent_sdk.tools.academy import AcademyToolsMixin
 from openclaw_livekit_agent_sdk.telephony import resolve_caller
 from openclaw_livekit_agent_sdk.trace import trace
 from openclaw_livekit_agent_sdk.transcript import wire_transcript_logging
@@ -37,14 +39,14 @@ load_env()
 
 logger = logging.getLogger("openclaw-livekit.agent")
 
-# ElevenLabs voice ID for Nyla (from openclaw.json talk config)
+# ElevenLabs voice ID (Harem World default — Nyla's voice for now).
 _ELEVENLABS_VOICE_ID = "AEW6JTgnyoPaoB9zlK3S"
 _ELEVENLABS_MODEL = "eleven_v3"
 _CHAINED_LLM_MODEL = "gemini-3.1-flash-lite-preview"
 
 # --- persona -----------------------------------------------------------
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-_DEFAULT_PERSONA = "You are Nyla, a voice assistant on a phone call with Eric."
+_DEFAULT_PERSONA = "You are the Harem World host on a phone call with Eric."
 
 
 def _load_persona() -> str:
@@ -56,14 +58,8 @@ def _load_persona() -> str:
 
 
 # --- agent class -------------------------------------------------------
-class PartyAgent(
-    CoreToolsMixin,
-    MemoryToolsMixin,
-    SessionsToolsMixin,
-    AcademyToolsMixin,
-    Agent,
-):
-    """Party agent with all OpenClaw platform tools."""
+class PartyAgent(Agent):
+    """Bare-bones Harem World agent. No tool mixins yet — see module docstring."""
 
     def __init__(
         self,
@@ -96,10 +92,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     trace(f"caller source={caller.source} from={caller_from!r} call_id={call_sid!r}")
 
-    stt = openai_plugin.STT(
-        model="whisper-1",
-        language="en",
-    )
+    stt = openai_plugin.STT(model="whisper-1", language="en")
 
     vad = silero_plugin.VAD.load(
         min_speech_duration=0.1,
@@ -107,10 +100,7 @@ async def entrypoint(ctx: JobContext) -> None:
         prefix_padding_duration=0.4,
     )
 
-    llm = google_plugin.LLM(
-        model=_CHAINED_LLM_MODEL,
-        temperature=0.8,
-    )
+    llm = google_plugin.LLM(model=_CHAINED_LLM_MODEL, temperature=0.8)
 
     tts = elevenlabs_plugin.TTS(
         voice_id=_ELEVENLABS_VOICE_ID,
