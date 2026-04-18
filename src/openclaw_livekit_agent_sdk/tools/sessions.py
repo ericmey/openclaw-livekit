@@ -5,15 +5,22 @@ from __future__ import annotations
 import base64
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 from livekit.agents import Agent, function_tool
 
 from ..cli_spawner import fire_and_forget
 from ..config import NYLA_DEFAULT_CONFIG, AgentConfig
 from ..constants import (
+    CALLBACK_MAX_DELAY_S,
+    CALLBACK_MIN_DELAY_S,
+    CALLBACK_SHORT_DELAY_S,
     DELAY_RE,
     E164_RE,
     ERIC_DISCORD_DM,
+    ERIC_TZ,
+    is_quiet_hour,
+    parse_delay_seconds,
     sanitize,
 )
 from ..trace import trace
@@ -207,7 +214,11 @@ class SessionsToolsMixin(Agent):
 
     @function_tool
     async def schedule_callback(
-        self, delay: str, reason: str, phone: str | None = None
+        self,
+        delay: str,
+        reason: str,
+        phone: str | None = None,
+        confirmed: bool = False,
     ) -> str:
         """Schedule a callback — you will call the user back after a delay.
 
@@ -217,6 +228,14 @@ class SessionsToolsMixin(Agent):
         "Give me a ring in an hour". You MUST call this tool to schedule
         the callback. Saying you'll set a reminder without calling this
         tool means no callback will happen.
+
+        Guardrails: the tool rejects delays under 1 minute or over 24
+        hours outright. It refuses (without ``confirmed=True``) delays
+        under 2 minutes, callbacks landing during Eric's quiet hours
+        (22:00-07:00 local), and callbacks to a phone number different
+        from the caller's own. If the tool asks for confirmation, read
+        the refusal aloud, ask if the user really wants it, and if yes,
+        call the tool again with ``confirmed=True``.
 
         Args:
             delay: How long from now to call back (e.g. '5m', '30m',
@@ -230,10 +249,14 @@ class SessionsToolsMixin(Agent):
                 pass this if the caller explicitly asks to be called
                 back at a DIFFERENT number. Do NOT ask the caller to
                 recite their own phone number.
+            confirmed: Set to True only after the user has explicitly
+                confirmed a guardrail prompt. Never pass True on the
+                first call.
         """
         trace(
             f"tool=schedule_callback delay={delay!r} phone={phone!r} "
-            f"reason={(reason or '')[:60]!r} caller_from={self._caller_from!r}"
+            f"confirmed={confirmed} reason={(reason or '')[:60]!r} "
+            f"caller_from={self._caller_from!r}"
         )
         delay_value = (delay or "").strip()
         if not delay_value:
@@ -247,7 +270,24 @@ class SessionsToolsMixin(Agent):
                 f"a format I recognize. Try '5m', '30m', '1h', '2h'."
             )
 
+        delay_seconds = parse_delay_seconds(delay_value)
+        # Hard floor / ceiling — no override. A callback scheduled 10
+        # seconds out is a programming mistake; 3 days out is a cron job.
+        if delay_seconds < CALLBACK_MIN_DELAY_S:
+            return (
+                f"I can't schedule a callback that fast — the minimum delay "
+                f"is {CALLBACK_MIN_DELAY_S // 60} minute. Pick a longer delay."
+            )
+        if delay_seconds > CALLBACK_MAX_DELAY_S:
+            hours = CALLBACK_MAX_DELAY_S // 3600
+            return (
+                f"I can't schedule a callback that far out — the maximum "
+                f"delay is {hours} hours. For longer, ask me to set a cron "
+                f"reminder instead."
+            )
+
         phone_value = (phone or "").strip()
+        phone_is_different = False
         if not phone_value:
             if self._caller_from:
                 phone_value = self._caller_from
@@ -259,6 +299,11 @@ class SessionsToolsMixin(Agent):
                     "I can't schedule a callback — I don't have a number "
                     "to call. Ask Eric what number to reach him at."
                 )
+        else:
+            caller_from_value = (self._caller_from or "").strip()
+            phone_is_different = (
+                bool(caller_from_value) and phone_value != caller_from_value
+            )
 
         safe_reason = sanitize(reason or "callback")[:80] or "callback"
         safe_target = sanitize(phone_value)
@@ -267,6 +312,38 @@ class SessionsToolsMixin(Agent):
                 f"I can't schedule a callback — '{phone_value}' isn't a "
                 f"valid E.164 phone number."
             )
+
+        # Compute the local-time hour at the callback moment so quiet
+        # hours apply to when Eric gets the ring, not when we schedule it.
+        callback_utc = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+        callback_local = callback_utc.astimezone(ERIC_TZ)
+        lands_in_quiet_hours = is_quiet_hour(callback_local.hour)
+        is_short_delay = delay_seconds < CALLBACK_SHORT_DELAY_S
+
+        # Require explicit confirmation for anything unusual. One
+        # `confirmed=True` bypasses all three checks — the model flips
+        # it after a human "yes".
+        if not confirmed:
+            if is_short_delay:
+                mins = delay_seconds // 60 or 1
+                return (
+                    f"That's only {mins} minute(s) from now — do you really "
+                    f"want me to call back that fast? If yes, confirm and "
+                    f"I'll schedule it."
+                )
+            if lands_in_quiet_hours:
+                return (
+                    f"That callback would land at "
+                    f"{callback_local.strftime('%-I:%M %p')} your time — "
+                    f"that's inside your quiet hours. Confirm if you really "
+                    f"want me to ring you then."
+                )
+            if phone_is_different:
+                return (
+                    f"Just confirming — you want the callback to go to "
+                    f"{safe_target}, not the number you're calling from? "
+                    f"Confirm and I'll schedule it."
+                )
 
         reason_b64 = base64.b64encode(safe_reason.encode("utf-8")).decode("ascii")
         cron_message = "\n".join(
