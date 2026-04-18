@@ -7,7 +7,6 @@ from openclaw_livekit_agent_sdk.constants import (
     MIZUKI_DISCORD_CHANNEL,
     NYLA_DISCORD_ROOM,
     SANITIZE_RE,
-    SESSIONS_DELIVERY_TARGETS,
     sanitize,
 )
 
@@ -16,11 +15,6 @@ def test_discord_channels_are_numeric_strings():
     assert MIZUKI_DISCORD_CHANNEL.isdigit()
     assert NYLA_DISCORD_ROOM.startswith("channel:")
     assert ERIC_DISCORD_DM.startswith("user:")
-
-
-def test_delivery_targets_has_room_and_dm():
-    assert "room" in SESSIONS_DELIVERY_TARGETS
-    assert "dm" in SESSIONS_DELIVERY_TARGETS
 
 
 def test_sanitize_strips_shell_chars():

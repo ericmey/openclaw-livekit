@@ -7,6 +7,7 @@ import logging
 from livekit.agents import Agent, function_tool
 
 from ..cli_spawner import fire_and_forget
+from ..config import NYLA_DEFAULT_CONFIG, AgentConfig
 from ..constants import MIZUKI_DISCORD_CHANNEL
 from ..trace import trace
 
@@ -14,11 +15,18 @@ logger = logging.getLogger("openclaw-livekit.agent")
 
 
 class AcademyToolsMixin(Agent):
-    """Provides academy_selfie and academy_send tools."""
+    """Provides academy_selfie and academy_send tools.
+
+    Reads ``self.config.agent_name`` so each voice agent asks Mizuki to
+    draw a selfie of *herself*, not hardcoded "Nyla".
+    """
+
+    #: Class-level fallback. Concrete agents override via self.config.
+    config: AgentConfig = NYLA_DEFAULT_CONFIG
 
     @function_tool
     async def academy_selfie(self, mood: str, nsfw: bool = False) -> str:
-        """Send a selfie of yourself (Nyla) to Eric via DM.
+        """Send a selfie of yourself to Eric via DM.
 
         Invocation Condition: Invoke this tool whenever the user asks for
         a selfie, a picture of you, or says "send me a selfie". Also
@@ -36,8 +44,9 @@ class AcademyToolsMixin(Agent):
         trace(f"tool=academy_selfie mood={mood[:60]!r} nsfw={nsfw}")
         mood_text = (mood or "smiling, warm, looking at viewer").strip()
         rating = "nsfw" if nsfw else "general"
+        self_name = self.config.agent_name.capitalize()
         request_message = (
-            f"@Mizuki Hey, can you draw a selfie of Nyla, {mood_text}? "
+            f"@Mizuki Hey, can you draw a selfie of {self_name}, {mood_text}? "
             f"{rating} rating. IMPORTANT: When it's done, please DM the "
             f"image directly to Eric instead of replying here, and include "
             f"a message saying that I wanted to send him a selfie."
@@ -55,7 +64,10 @@ class AcademyToolsMixin(Agent):
             )
         except Exception as err:
             logger.error("[voice-tools] academy_selfie spawn failed: %s", err)
-            return "Couldn't send the selfie request right now."
+            return (
+                f"I couldn't send the selfie request — the OpenClaw CLI "
+                f"didn't start ({err})."
+            )
         return "Selfie requested. Mizuki will DM it to Eric when ready."
 
     @function_tool
@@ -85,7 +97,7 @@ class AcademyToolsMixin(Agent):
         scene = (prompt or "").strip()
         rating_value = (rating or "general").strip()
         if not scene:
-            return "Error: prompt is required — describe the scene."
+            return "I can't send that — no scene description was given."
 
         request_message = (
             f"@Mizuki Hey, can you draw {character_name}, {scene}? "
@@ -106,5 +118,8 @@ class AcademyToolsMixin(Agent):
             )
         except Exception as err:
             logger.error("[voice-tools] academy_send spawn failed: %s", err)
-            return "Couldn't send the image request right now."
+            return (
+                f"I couldn't send the image request — the OpenClaw CLI "
+                f"didn't start ({err})."
+            )
         return f"Image of {character_name} requested. Mizuki will DM it to Eric when ready."

@@ -12,6 +12,7 @@ from typing import Any
 import aiohttp
 from livekit.agents import Agent, function_tool
 
+from ..config import NYLA_DEFAULT_CONFIG, AgentConfig
 from ..musubi_client import (
     MUSUBI_COLLECTION,
     MUSUBI_TIMEOUT_S,
@@ -26,16 +27,17 @@ logger = logging.getLogger("openclaw-livekit.agent")
 class MemoryToolsMixin(Agent):
     """Provides musubi_recent and memory_store tools.
 
-    Concrete agent classes should override ``memory_agent_tag`` to label
-    stored memories with their voice identity. Defaults to ``"nyla-voice"``
-    so any voice agent that doesn't explicitly re-identify attributes
-    its memories to the shared household Nyla-voice bucket.
+    Reads the voice identity from ``self.config.memory_agent_tag`` so
+    stored memories land in the right bucket per speaker. Concrete agents
+    build an ``AgentConfig`` and set ``self.config`` before calling
+    ``super().__init__()``. If no config is set, the SDK-level default
+    (Nyla) applies — safe fallback, matches pre-AgentConfig behavior.
     """
 
-    #: Per-agent override. Stored memories get tagged with this value in
-    #: their ``payload.agent`` field, which is how the household's memory
-    #: ingestion separates voices.
-    memory_agent_tag: str = "nyla-voice"
+    #: Class-level fallback. Instance-level ``self.config`` set by the
+    #: concrete agent takes precedence. Keeping a class default means
+    #: agents that forget to set one still behave sanely.
+    config: AgentConfig = NYLA_DEFAULT_CONFIG
 
     async def fetch_recent_context(self, hours: int = 24, limit: int = 10) -> str:
         """Plain-async fetch of recent household memories.
@@ -74,16 +76,16 @@ class MemoryToolsMixin(Agent):
                         logger.warning(
                             "musubi_recent: qdrant %d: %s", resp.status, text
                         )
-                        return f"Memory service error ({resp.status})."
+                        return f"Couldn't check memory — Qdrant returned {resp.status}."
                     data = await resp.json()
         except asyncio.TimeoutError:
             logger.warning(
                 "musubi_recent: qdrant timed out (%.0fms)", MUSUBI_TIMEOUT_S * 1000
             )
-            return "Memory lookup timed out."
+            return "Couldn't check memory — Qdrant didn't respond in time."
         except Exception as err:
             logger.warning("musubi_recent: %s", err)
-            return f"Memory lookup failed: {err}"
+            return f"Couldn't check memory — Qdrant lookup failed: {err}"
 
         points = (data.get("result") or {}).get("points") or []
         if not points:
@@ -140,14 +142,14 @@ class MemoryToolsMixin(Agent):
             return "Error: content is required."
 
         tag_list = tags or []
-        agent_name = self.memory_agent_tag
+        agent_name = self.config.memory_agent_tag
 
         try:
             vector = await async_embed_text(content)
         except Exception as err:
             logger.error("memory_store: embedding failed: %s", err)
             trace(f"tool=memory_store EMBED_FAIL {err}")
-            return "Couldn't store that memory — embedding failed."
+            return "Memory didn't save — embeddings service is unavailable."
 
         ts = datetime.now(timezone.utc)
         point_id = str(uuid.uuid4())
@@ -187,13 +189,13 @@ class MemoryToolsMixin(Agent):
                         logger.error(
                             "memory_store: qdrant %d: %s", resp.status, text
                         )
-                        return "Couldn't store that memory — database error."
+                        return f"Memory didn't save — Qdrant returned {resp.status}."
         except asyncio.TimeoutError:
             logger.warning("memory_store: qdrant timed out")
-            return "Memory store timed out."
+            return "Memory didn't save — Qdrant didn't respond in time."
         except Exception as err:
             logger.error("memory_store: %s", err)
-            return f"Couldn't store that memory: {err}"
+            return f"Memory didn't save — Qdrant write failed: {err}"
 
         trace(f"tool=memory_store DONE id={point_id}")
         return "Got it, stored."

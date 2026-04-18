@@ -9,10 +9,11 @@ import re
 from livekit.agents import Agent, function_tool
 
 from ..cli_spawner import fire_and_forget
+from ..config import NYLA_DEFAULT_CONFIG, AgentConfig
 from ..constants import (
     DELAY_RE,
     E164_RE,
-    SESSIONS_DELIVERY_TARGETS,
+    ERIC_DISCORD_DM,
     sanitize,
 )
 from ..trace import trace
@@ -23,9 +24,45 @@ logger = logging.getLogger("openclaw-livekit.agent")
 class SessionsToolsMixin(Agent):
     """Provides sessions_send, sessions_spawn, and schedule_callback tools.
 
+    Reads per-agent routing from ``self.config``:
+      - ``config.discord_room`` — target for ``deliver_to="room"``.
+      - ``config.allowed_delegation_targets`` — optional allowlist.
+      - ``config.agent_name`` — cron ``--agent`` slot + self-reference.
+
     Requires ``self._caller_from`` to be set by the concrete agent class
     (used as default phone number for schedule_callback).
     """
+
+    #: Class-level fallback. Instance-level ``self.config`` set by the
+    #: concrete agent takes precedence.
+    config: AgentConfig = NYLA_DEFAULT_CONFIG
+
+    def _delivery_target(self, deliver_to: str) -> str | None:
+        """Resolve a ``deliver_to`` key ("room" or "dm") to a Discord
+        target. Returns ``None`` for unrecognized keys.
+        """
+        key = (deliver_to or "room").strip().lower()
+        if key == "room":
+            return self.config.discord_room
+        if key == "dm":
+            return ERIC_DISCORD_DM
+        return None
+
+    def _reject_delegation_target(self, agent_id: str) -> str | None:
+        """If ``config.allowed_delegation_targets`` restricts who this
+        voice agent may delegate to, return a user-facing rejection
+        string for disallowed targets; otherwise ``None`` (allowed).
+        """
+        allowed = self.config.allowed_delegation_targets
+        if allowed is None:
+            return None
+        if agent_id.lower() not in allowed:
+            allowed_list = ", ".join(sorted(allowed)) or "(no one)"
+            return (
+                f"I can't delegate to {agent_id} from this call — "
+                f"allowed targets for me are: {allowed_list}."
+            )
+        return None
 
     @function_tool
     async def sessions_send(
@@ -58,14 +95,21 @@ class SessionsToolsMixin(Agent):
         agent_value = (agent_id or "").strip()
         message_value = (message or "").strip()
         if not agent_value:
-            return "Error: agent_id is required."
+            return "I can't send that — no agent_id was given."
         if not message_value:
-            return "Error: message is required."
+            return "I can't send that — the message is empty."
+
+        reject = self._reject_delegation_target(agent_value)
+        if reject is not None:
+            return reject
 
         target_key = (deliver_to or "room").strip().lower()
-        reply_target = SESSIONS_DELIVERY_TARGETS.get(target_key)
+        reply_target = self._delivery_target(target_key)
         if reply_target is None:
-            return f"Error: deliver_to must be 'room' or 'dm', got '{deliver_to}'."
+            return (
+                f"I can't send that — deliver_to must be 'room' or 'dm', "
+                f"got '{deliver_to}'."
+            )
 
         try:
             fire_and_forget(
@@ -81,7 +125,10 @@ class SessionsToolsMixin(Agent):
             )
         except Exception as err:
             logger.error("[voice-tools] sessions_send spawn failed: %s", err)
-            return f"Couldn't reach {agent_value} right now."
+            return (
+                f"I couldn't reach {agent_value} — the OpenClaw CLI "
+                f"didn't start ({err})."
+            )
         logger.info(
             "[voice-tools] sessions_send → %s (deliver: %s)",
             agent_value,
@@ -117,14 +164,21 @@ class SessionsToolsMixin(Agent):
         agent_value = (agent_id or "").strip()
         task_value = (task or "").strip()
         if not agent_value:
-            return "Error: agent_id is required."
+            return "I can't spawn that — no agent_id was given."
         if not task_value:
-            return "Error: task is required."
+            return "I can't spawn that — the task description is empty."
+
+        reject = self._reject_delegation_target(agent_value)
+        if reject is not None:
+            return reject
 
         target_key = (deliver_to or "room").strip().lower()
-        reply_target = SESSIONS_DELIVERY_TARGETS.get(target_key)
+        reply_target = self._delivery_target(target_key)
         if reply_target is None:
-            return f"Error: deliver_to must be 'room' or 'dm', got '{deliver_to}'."
+            return (
+                f"I can't spawn that — deliver_to must be 'room' or 'dm', "
+                f"got '{deliver_to}'."
+            )
 
         try:
             fire_and_forget(
@@ -140,7 +194,10 @@ class SessionsToolsMixin(Agent):
             )
         except Exception as err:
             logger.error("[voice-tools] sessions_spawn spawn failed: %s", err)
-            return f"Couldn't spawn {agent_value} right now."
+            return (
+                f"I couldn't spawn {agent_value} — the OpenClaw CLI "
+                f"didn't start ({err})."
+            )
         logger.info(
             "[voice-tools] sessions_spawn → %s (deliver: %s)",
             agent_value,
@@ -180,9 +237,15 @@ class SessionsToolsMixin(Agent):
         )
         delay_value = (delay or "").strip()
         if not delay_value:
-            return "Error: delay is required, for example '30m' or '1h'."
+            return (
+                "I can't schedule a callback — no delay was given. "
+                "Try '5m', '30m', '1h'."
+            )
         if not DELAY_RE.match(delay_value):
-            return f"Invalid delay format '{delay_value}'. Use something like '5m', '30m', '1h', or '2h'."
+            return (
+                f"I can't schedule a callback — delay '{delay_value}' isn't "
+                f"a format I recognize. Try '5m', '30m', '1h', '2h'."
+            )
 
         phone_value = (phone or "").strip()
         if not phone_value:
@@ -192,12 +255,18 @@ class SessionsToolsMixin(Agent):
                     f"tool=schedule_callback defaulting phone to caller_from={phone_value!r}"
                 )
             else:
-                return "No phone number available to call back. Ask Eric what number to reach him at."
+                return (
+                    "I can't schedule a callback — I don't have a number "
+                    "to call. Ask Eric what number to reach him at."
+                )
 
         safe_reason = sanitize(reason or "callback")[:80] or "callback"
         safe_target = sanitize(phone_value)
         if not E164_RE.match(safe_target):
-            return f"Invalid phone number: {phone_value}"
+            return (
+                f"I can't schedule a callback — '{phone_value}' isn't a "
+                f"valid E.164 phone number."
+            )
 
         reason_b64 = base64.b64encode(safe_reason.encode("utf-8")).decode("ascii")
         cron_message = "\n".join(
@@ -216,7 +285,7 @@ class SessionsToolsMixin(Agent):
                     "cron", "add",
                     "--name", f"Callback: {safe_reason[:40]}",
                     "--at", delay_value,
-                    "--agent", "nyla",
+                    "--agent", self.config.agent_name,
                     "--session", "isolated",
                     "--message", cron_message,
                     "--no-deliver",
@@ -226,7 +295,10 @@ class SessionsToolsMixin(Agent):
             )
         except Exception as err:
             logger.error("[voice-tools] schedule_callback spawn failed: %s", err)
-            return "Couldn't schedule the callback right now. Try again?"
+            return (
+                f"I couldn't schedule the callback — the OpenClaw cron "
+                f"CLI didn't start ({err})."
+            )
         logger.info(
             "[voice-tools] schedule_callback → +%s (%d char reason)",
             delay_value,
