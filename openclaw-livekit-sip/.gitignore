@@ -1,7 +1,0 @@
-.DS_Store
-*.log
-.env
-# local, unsanitized copies of config templates
-config/*.local.yaml
-config/*.local.json
-config/*.local.plist

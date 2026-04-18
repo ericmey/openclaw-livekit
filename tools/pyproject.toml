@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tools"
+version = "0.1.0"
+description = "Voice agent tool mixins — browseable catalog of @function_tool capabilities"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "sdk",
+    "livekit-agents~=1.5",
+    "aiohttp",
+]
+
+[tool.uv.sources]
+sdk = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+
+[tool.setuptools.packages.find]
+where = ["src"]

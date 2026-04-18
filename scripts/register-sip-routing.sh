@@ -2,7 +2,7 @@
 #
 # Idempotent SIP trunk + dispatch-rule registration.
 #
-# Reads from ~/.openclaw/config/ (or $OPENCLAW_CONFIG_DIR):
+# Reads from <repo>/config/ (or $LIVEKIT_CONFIG_DIR):
 #   sip-inbound-trunk.json
 #   sip-dispatch-nyla.json
 #   sip-dispatch-aoi.json
@@ -30,7 +30,8 @@
 
 set -euo pipefail
 
-CONFIG_DIR="${OPENCLAW_CONFIG_DIR:-${HOME}/.openclaw/config}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONFIG_DIR="${LIVEKIT_CONFIG_DIR:-${REPO_ROOT}/config}"
 DRY_RUN=false
 TRUNKS_ONLY=false
 RULES_ONLY=false

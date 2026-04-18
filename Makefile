@@ -8,7 +8,7 @@ SHELL := /usr/bin/env bash
 .PHONY: help bootstrap up down logs health test \
         deploy teardown cycle \
         register-sip tail truncate-logs \
-        sync-venvs
+        sync-venvs lint typecheck verify
 
 help: ## List the common verbs
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[1;34m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -18,11 +18,8 @@ help: ## List the common verbs
 bootstrap: ## First-time machine setup (deps, config dir, venvs)
 	scripts/bootstrap.sh
 
-sync-venvs: ## Re-sync all agent venvs via uv
-	@for a in sdk nyla aoi party; do \
-	  echo ">> openclaw-livekit-agent-$$a"; \
-	  (cd openclaw-livekit-agent-$$a && uv sync --all-groups); \
-	done
+sync-venvs: ## Re-sync the root workspace venv (one .venv/ for sdk+tools+all agents)
+	uv sync --all-groups
 
 # ---- infrastructure ------------------------------------------------
 
@@ -40,7 +37,7 @@ health: ## Run the health-check script
 
 # ---- SIP routing ---------------------------------------------------
 
-register-sip: ## Register/refresh SIP trunk + dispatch rules from ~/.openclaw/config/
+register-sip: ## Register/refresh SIP trunk + dispatch rules from ./config/ (or $LIVEKIT_CONFIG_DIR)
 	scripts/register-sip-routing.sh
 
 # ---- agents --------------------------------------------------------
@@ -64,8 +61,19 @@ truncate-logs: ## Zero out all agent logs (clean baseline for testing)
 
 # ---- tests ---------------------------------------------------------
 
-test: ## Run pytest across all five subprojects
-	@for d in openclaw-livekit-agent-sdk openclaw-livekit-agent-nyla openclaw-livekit-agent-aoi openclaw-livekit-agent-party; do \
+test: ## Run pytest across all workspace members (sdk + three agents)
+	@for d in sdk agents/nyla agents/aoi agents/party; do \
 	  echo ">> $$d"; \
 	  (cd $$d && uv run pytest -q) || exit 1; \
 	done
+
+# ---- static checks (pre-release gate) ------------------------------
+
+lint: ## Run ruff (lint + format check). Clean exit = ready.
+	uv run ruff check .
+	uv run ruff format --check .
+
+typecheck: ## Run pyright across sdk/tools/agents.
+	uv run pyright
+
+verify: lint typecheck test ## Lint + typecheck + tests. Green before human testing.

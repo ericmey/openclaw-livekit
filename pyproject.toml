@@ -1,0 +1,83 @@
+# openclaw-livekit — monorepo workspace root.
+#
+# Declares a uv workspace whose members are each Python package in the
+# repo. One root .venv, one uv.lock. Pylance / Pyright / IDE resolve
+# cross-package imports via the workspace metadata.
+#
+#   uv sync                 # create/refresh root .venv
+#   uv run pytest           # run tests across all members
+
+[tool.uv.workspace]
+members = ["sdk", "tools", "agents/*"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.408",
+    "ruff>=0.15.11",
+]
+
+# ---- ruff: linter + formatter -----------------------------------------
+# Run via:  make lint  (or:  uv run ruff check . ; uv run ruff format --check .)
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # import order
+    "UP",  # pyupgrade
+    "B",   # bugbear
+]
+# B008: function-call-in-default-argument is false-positive for FastAPI
+# E501: line-too-long handled by the formatter, not the linter.
+ignore = ["B008", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Import-verification tests import symbols expressly to assert they exist.
+"**/tests/test_imports.py" = ["F401"]
+# Package __init__.py re-exports don't need to be marked __all__.
+"**/__init__.py" = ["F401"]
+
+# ---- pyright: static type checker -------------------------------------
+# Run via:  make typecheck  (or:  uv run pyright)
+[tool.pyright]
+include = ["sdk", "tools", "agents"]
+exclude = ["**/.venv", "**/__pycache__", "**/build", "**/dist"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+reportMissingTypeStubs = false
+# Basic mode — pragmatic for an app codebase. Tighten later if useful.
+typeCheckingMode = "basic"
+
+# Each agent's src/ is prepended to sys.path at runtime (launchd runs
+# `python agents/<name>/src/agent.py`), so `from _shared import ...`
+# works. Tell pyright the same per-agent via executionEnvironments so
+# `_shared` resolves to that agent's module — not the global extraPaths
+# collision where all three _shared.py files would clash.
+[[tool.pyright.executionEnvironments]]
+root = "agents/nyla/src"
+
+[[tool.pyright.executionEnvironments]]
+root = "agents/aoi/src"
+
+[[tool.pyright.executionEnvironments]]
+root = "agents/party/src"
+
+# Test files live one level up from src/. Their conftest.py does
+# `sys.path.insert(0, "../src")` at runtime; mirror that for pyright.
+[[tool.pyright.executionEnvironments]]
+root = "agents/nyla/tests"
+extraPaths = ["agents/nyla/src"]
+
+[[tool.pyright.executionEnvironments]]
+root = "agents/aoi/tests"
+extraPaths = ["agents/aoi/src"]
+
+[[tool.pyright.executionEnvironments]]
+root = "agents/party/tests"
+extraPaths = ["agents/party/src"]

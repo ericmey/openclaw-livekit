@@ -20,6 +20,9 @@
 
 set -u  # no -e: we want to run every check
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="${LIVEKIT_VOICE_LOGS:-${REPO_ROOT}/logs/voice}"
+
 QUIET=false
 FORMAT=text
 
@@ -70,7 +73,7 @@ fi
 for a in nyla aoi party; do
   pid_line="$(launchctl list 2>/dev/null | awk -v lbl="ai.openclaw.livekit-agent-${a}" '$3 == lbl {print $1}')"
   if [[ -n "${pid_line}" && "${pid_line}" != "-" ]]; then
-    reg_line="$(grep 'registered worker' "${HOME}/.openclaw/logs/voice/agent-${a}.log" 2>/dev/null | tail -1 || true)"
+    reg_line="$(grep 'registered worker' "${LOG_DIR}/agent-${a}.log" 2>/dev/null | tail -1 || true)"
     if [[ -n "${reg_line}" ]]; then
       worker_id="$(echo "${reg_line}" | grep -oE '"id": "[^"]+"' | head -1 | cut -d'"' -f4)"
       record "agent-${a}" ok "pid=${pid_line} worker=${worker_id:-unknown}"

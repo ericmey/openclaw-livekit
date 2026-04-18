@@ -9,7 +9,8 @@
 
 set -uo pipefail
 
-LOG_DIR="${OPENCLAW_HOME:-${HOME}/.openclaw}/logs/voice"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="${LIVEKIT_VOICE_LOGS:-${REPO_ROOT}/logs/voice}"
 FILTER=""
 
 agents=()

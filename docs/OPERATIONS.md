@@ -24,8 +24,8 @@ git clone git@github.com:ericmey/openclaw-livekit.git ~/Projects/openclaw-liveki
 cd ~/Projects/openclaw-livekit
 make bootstrap                  # installs deps, drops config templates
 
-# Edit the files bootstrap drops in ~/.openclaw/config/ and
-# ~/.openclaw/secrets/livekit-agents.env.
+# Edit the files bootstrap drops in ./config/ and
+# ./secrets/livekit-agents.env.
 
 brew services stop redis        # compose ships redis; avoid port clash
 make up                         # docker compose up -d
@@ -36,7 +36,7 @@ make health                     # confirm everything is green
 
 ### Change a SIP dispatch rule
 
-1. Edit `~/.openclaw/config/sip-dispatch-<agent>.json`.
+1. Edit `config/sip-dispatch-<agent>.json`.
 2. `make register-sip` — the script is idempotent and will delete the
    stale rule + recreate from the new JSON.
 3. `make health` — verify rule count is back to ≥3.
@@ -46,7 +46,7 @@ make health                     # confirm everything is green
 
 ### Rotate an API key
 
-1. Edit `~/.openclaw/secrets/livekit-agents.env`.
+1. Edit `secrets/livekit-agents.env`.
 2. `make deploy` — re-renders plists with the new value + kickstarts
    each agent. No other file needs to change.
 

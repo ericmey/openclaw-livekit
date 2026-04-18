@@ -9,7 +9,8 @@
 
 set -euo pipefail
 
-LOG_DIR="${OPENCLAW_HOME:-${HOME}/.openclaw}/logs/voice"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="${LIVEKIT_VOICE_LOGS:-${REPO_ROOT}/logs/voice}"
 
 log() { printf "\033[1;34m[truncate]\033[0m %s\n" "$*"; }
 

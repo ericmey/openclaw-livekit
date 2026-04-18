@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sdk"
+version = "0.1.0"
+description = "Shared runtime for the voice agents — telemetry, trace, transcript, post-call, config, clients"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "livekit-agents~=1.5",
+    "aiohttp",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+
+[tool.setuptools.packages.find]
+where = ["src"]

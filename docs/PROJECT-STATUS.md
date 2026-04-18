@@ -11,10 +11,9 @@ reflects the change in code.
 **Monorepo cutover complete.** The voice stack is now organized as a
 single repo at `~/Projects/openclaw-livekit/` with five subprojects
 imported as subtrees (full history preserved) plus the operations
-layer. The five former sibling repos at
-`~/.openclaw/extensions/openclaw-livekit-*` were archived to
-`~/Projects/_archive/` and the live agents were redeployed from the
-new paths.
+layer. The five former sibling repos at the previous OpenClaw
+extensions path were archived to `~/Projects/_archive/` and the live
+agents were redeployed from the new paths.
 
 The phone line is operational:
 - `+1 (317) 653-4945`, `+1 (765) 754-4435` → `phone-nyla`
@@ -31,7 +30,7 @@ Too many changes for one list. In order of depth:
 - Full monorepo layout with pinned image tags in `docker-compose.yaml`
   (livekit-server v1.10.1, livekit-sip v1.2.0, redis 7-alpine).
 - Launchd plist template with substitution tokens, rendered by
-  `scripts/deploy-agents.sh` from `~/.openclaw/secrets/livekit-agents.env`.
+  `scripts/deploy-agents.sh` from `secrets/livekit-agents.env`.
 - Idempotent `scripts/register-sip-routing.sh` reads config JSON, diffs
   against live Redis state, delete+recreates as needed.
 - `scripts/health-check.sh` with `--json` mode for future cron wiring.
@@ -81,11 +80,11 @@ Run from monorepo root: `make test`.
 
 ## Known state that's not in code
 
-- `~/.openclaw/secrets/livekit-sip-trunk.md` — has the final cutover
-  values (Twilio trunk SID, termination URI, credential username/password,
+- `secrets/livekit-sip-trunk.md` — has the final cutover values
+  (Twilio trunk SID, termination URI, credential username/password,
   livekit-sip trunk + dispatch rule IDs, attached DIDs). Never in git.
-- `~/.openclaw/secrets/livekit-agents.env` — runtime secrets for the
-  launchd plists (API keys). Never in git.
+- `secrets/livekit-agents.env` — runtime secrets for the launchd
+  plists (API keys, Discord bot tokens). Never in git.
 - Twilio Elastic SIP Trunk — console state only. IP ACL attached
   to source `104.254.222.24/32`.
 - Brew `redis` service still serving `127.0.0.1:6379` — compose's
@@ -129,10 +128,9 @@ Deferred to the next Claude session per Eric's instruction.
    feature. Preferred path is the OpenClaw CLI verb redesign documented
    in `openclaw-livekit-agent-sdk/TODO.md`. Requires a CLI change
    outside this monorepo.
-2. **Drift detection** — cron that reads `~/.openclaw/config/*.json`
-   and compares to `lk sip ... list --json` output. Alerts on
-   mismatch. Catches the "someone CLI'd around the checked-in config"
-   class of bug.
+2. **Drift detection** — cron that reads `config/*.json` and compares
+   to `lk sip ... list --json` output. Alerts on mismatch. Catches the
+   "someone CLI'd around the checked-in config" class of bug.
 3. **CI on PR** — `.github/workflows/ci.yml` running `make test` +
    shellcheck on scripts. Monorepo change only.
 

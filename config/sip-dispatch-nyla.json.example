@@ -3,7 +3,7 @@
     "Dispatch rule — routes inbound calls for specific DIDs to the",
     "phone-nyla agent. One file per agent; see sibling files for aoi and party.",
     "",
-    "Copy to ~/.openclaw/config/sip-dispatch-nyla.json and register via",
+    "Copy to config/sip-dispatch-nyla.json (gitignored) and register via",
     "scripts/register-sip-routing.sh.",
     "",
     "NUMBER FILTER FIELDS — do not confuse them:",

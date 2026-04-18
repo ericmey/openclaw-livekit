@@ -1,6 +1,6 @@
 # livekit-server runtime config.
 #
-# Copy to ~/.openclaw/config/livekit.yaml and edit:
+# Copy to config/livekit.yaml (gitignored) and edit:
 #   - `keys`: generate a strong secret; the devkey/devsecret default below is
 #     only useful for a first-boot smoke test on a disconnected box.
 #   - `redis.address`: leave as-is if you're running the shipped compose

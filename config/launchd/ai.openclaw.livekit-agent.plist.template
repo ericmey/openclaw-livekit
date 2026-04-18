@@ -3,16 +3,16 @@
   Template for ai.openclaw.livekit-agent-<name>.plist.
 
   Substitutions (handled by scripts/deploy-agents.sh):
-    {{AGENT_NAME}}        nyla | aoi | party
-    {{AGENT_LABEL}}       human-readable description
-    {{MONOREPO_ROOT}}     absolute path to the openclaw-livekit checkout
-    {{OPENCLAW_HOME}}     typically ~/.openclaw
+    {{AGENT_NAME}}            nyla | aoi | party
+    {{AGENT_LABEL}}           human-readable description
+    {{MONOREPO_ROOT}}         absolute path to the openclaw-livekit checkout
+    {{LIVEKIT_VOICE_LOGS}}    directory for voice-stack logs (default <repo>/logs/voice)
 
-  Secrets (LIVEKIT_*, GOOGLE_API_KEY, GATEWAY_AUTH_TOKEN) are pulled from
-  ~/.openclaw/secrets/livekit-agents.env by the deploy script. They are
-  NOT rendered into the committed-on-disk plist — instead the plist sets
-  them via substitutions at deploy time. Edit the secrets file to rotate,
-  then re-run scripts/deploy-agents.sh.
+  Secrets (LIVEKIT_*, GOOGLE_API_KEY, GATEWAY_AUTH_TOKEN, DISCORD_BOT_TOKEN)
+  are pulled from <repo>/secrets/livekit-agents.env by the deploy script
+  (override via OPENCLAW_SECRETS env var). They are NOT committed — the
+  secrets file is gitignored. Edit it and re-run scripts/deploy-agents.sh
+  to rotate.
 -->
 <plist version="1.0">
   <dict>
@@ -31,18 +31,18 @@
 
     <key>ProgramArguments</key>
     <array>
-      <string>{{MONOREPO_ROOT}}/openclaw-livekit-agent-{{AGENT_NAME}}/.venv/bin/python</string>
-      <string>{{MONOREPO_ROOT}}/openclaw-livekit-agent-{{AGENT_NAME}}/src/agent.py</string>
+      <string>{{MONOREPO_ROOT}}/.venv/bin/python</string>
+      <string>{{MONOREPO_ROOT}}/agents/{{AGENT_NAME}}/src/agent.py</string>
       <string>start</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>{{MONOREPO_ROOT}}/openclaw-livekit-agent-{{AGENT_NAME}}</string>
+    <string>{{MONOREPO_ROOT}}/agents/{{AGENT_NAME}}</string>
 
     <key>StandardOutPath</key>
-    <string>{{OPENCLAW_HOME}}/logs/voice/agent-{{AGENT_NAME}}.log</string>
+    <string>{{LIVEKIT_VOICE_LOGS}}/agent-{{AGENT_NAME}}.log</string>
     <key>StandardErrorPath</key>
-    <string>{{OPENCLAW_HOME}}/logs/voice/agent-{{AGENT_NAME}}.err.log</string>
+    <string>{{LIVEKIT_VOICE_LOGS}}/agent-{{AGENT_NAME}}.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -50,8 +50,8 @@
       <string>{{HOME}}</string>
       <key>PATH</key>
       <string>/opt/homebrew/bin:/opt/homebrew/opt/node/bin:/usr/local/bin:/usr/bin:/bin</string>
-      <key>OPENCLAW_HOME</key>
-      <string>{{OPENCLAW_HOME}}</string>
+      <key>LIVEKIT_VOICE_LOGS</key>
+      <string>{{LIVEKIT_VOICE_LOGS}}</string>
       <key>OPENCLAW_BIN</key>
       <string>/opt/homebrew/bin/openclaw</string>
       <key>LIVEKIT_URL</key>
@@ -64,6 +64,8 @@
       <string>{{GOOGLE_API_KEY}}</string>
       <key>GATEWAY_AUTH_TOKEN</key>
       <string>{{GATEWAY_AUTH_TOKEN}}</string>
+      <key>DISCORD_BOT_TOKEN</key>
+      <string>{{DISCORD_BOT_TOKEN}}</string>
       <key>NODE_EXTRA_CA_CERTS</key>
       <string>/etc/ssl/cert.pem</string>
     </dict>

@@ -14,8 +14,10 @@
 #   1. Stop brew's redis if you had one running:
 #        brew services stop redis
 #      (compose redis listens on the same 127.0.0.1:6379 port)
-#   2. Make sure ~/.openclaw/config/ has the three config files this compose
-#      bind-mounts in. Use scripts/bootstrap.sh to copy templates into place.
+#   2. Make sure ./config/ has the three config files this compose
+#      bind-mounts in (livekit.yaml, livekit-sip.yaml). Use
+#      scripts/bootstrap.sh to copy templates into place, or point at a
+#      different directory via `LIVEKIT_CONFIG_DIR=/abs/path`.
 #   3. On macOS: enable host networking in Docker Desktop (Settings > Resources
 #      > Network). livekit-sip needs it to advertise the host's real IP in SDP
 #      and to forward RTP on 10000-20000/udp.
@@ -55,7 +57,7 @@ services:
       - "7881:7881"
       - "7882:7882/udp"
     volumes:
-      - ${HOME}/.openclaw/config/livekit.yaml:/etc/livekit.yaml:ro
+      - ${LIVEKIT_CONFIG_DIR:-./config}/livekit.yaml:/etc/livekit.yaml:ro
     command: ["--config", "/etc/livekit.yaml"]
 
   livekit-sip:
@@ -70,5 +72,5 @@ services:
     # advertisement gets mangled.
     network_mode: host
     volumes:
-      - ${HOME}/.openclaw/config/livekit-sip.yaml:/config.yaml:ro
+      - ${LIVEKIT_CONFIG_DIR:-./config}/livekit-sip.yaml:/config.yaml:ro
     command: ["--config", "/config.yaml"]

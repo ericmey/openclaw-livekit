@@ -13,8 +13,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="${REPO_ROOT}/config/launchd/ai.openclaw.livekit-agent.plist.template"
-SECRETS="${OPENCLAW_SECRETS:-${HOME}/.openclaw/secrets/livekit-agents.env}"
-OPENCLAW_HOME="${OPENCLAW_HOME:-${HOME}/.openclaw}"
+SECRETS="${OPENCLAW_SECRETS:-${REPO_ROOT}/secrets/livekit-agents.env}"
+VOICE_LOGS="${LIVEKIT_VOICE_LOGS:-${REPO_ROOT}/logs/voice}"
 LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 
 log()  { printf "\033[1;34m[deploy]\033[0m %s\n" "$*"; }
@@ -23,8 +23,8 @@ die()  { printf "\033[1;31m[fatal]\033[0m  %s\n" "$*" >&2; exit 1; }
 
 # ---- preflight -------------------------------------------------------
 [[ -r "${TEMPLATE}" ]] || die "template not found: ${TEMPLATE}"
-[[ -r "${SECRETS}"  ]] || die "secrets file not found: ${SECRETS} (see config/secrets.env.example)"
-mkdir -p "${OPENCLAW_HOME}/logs/voice" "${LAUNCH_AGENTS_DIR}"
+[[ -r "${SECRETS}"  ]] || die "secrets file not found: ${SECRETS} (copy config/secrets.env.example and fill in)"
+mkdir -p "${VOICE_LOGS}" "${LAUNCH_AGENTS_DIR}"
 
 # Load secrets into the current env so envsubst can see them.
 # shellcheck disable=SC1090
@@ -35,6 +35,8 @@ set -a; . "${SECRETS}"; set +a
 : "${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET missing from ${SECRETS}}"
 : "${GOOGLE_API_KEY:?GOOGLE_API_KEY missing from ${SECRETS}}"
 : "${GATEWAY_AUTH_TOKEN:?GATEWAY_AUTH_TOKEN missing from ${SECRETS}}"
+: "${DISCORD_TOKEN_NYLA:?DISCORD_TOKEN_NYLA missing from ${SECRETS}}"
+: "${DISCORD_TOKEN_AOI:?DISCORD_TOKEN_AOI missing from ${SECRETS}}"
 
 # Agents to deploy (default: all three). Build the array from positional
 # args, or fall back to all three if none were given — the explicit $#
@@ -57,10 +59,22 @@ agent_label() {
   esac
 }
 
+agent_discord_token() {
+  # Per-agent Discord bot identity. Nyla is the orchestrator; Party
+  # reuses Nyla's token so academy tools route through the same bot.
+  case "$1" in
+    nyla|party) echo "${DISCORD_TOKEN_NYLA}" ;;
+    aoi)        echo "${DISCORD_TOKEN_AOI}"  ;;
+    *)          die "no discord token mapping for: $1" ;;
+  esac
+}
+
 render_plist() {
   local agent="$1"
   local label
   label="$(agent_label "$agent")"
+  local discord_token
+  discord_token="$(agent_discord_token "$agent")"
   local out="${LAUNCH_AGENTS_DIR}/ai.openclaw.livekit-agent-${agent}.plist"
 
   # sed-based render. envsubst would swallow any $... in paths; explicit
@@ -69,26 +83,27 @@ render_plist() {
     -e "s|{{AGENT_NAME}}|${agent}|g" \
     -e "s|{{AGENT_LABEL}}|${label}|g" \
     -e "s|{{MONOREPO_ROOT}}|${REPO_ROOT}|g" \
-    -e "s|{{OPENCLAW_HOME}}|${OPENCLAW_HOME}|g" \
+    -e "s|{{LIVEKIT_VOICE_LOGS}}|${VOICE_LOGS}|g" \
     -e "s|{{HOME}}|${HOME}|g" \
     -e "s|{{LIVEKIT_URL}}|${LIVEKIT_URL}|g" \
     -e "s|{{LIVEKIT_API_KEY}}|${LIVEKIT_API_KEY}|g" \
     -e "s|{{LIVEKIT_API_SECRET}}|${LIVEKIT_API_SECRET}|g" \
     -e "s|{{GOOGLE_API_KEY}}|${GOOGLE_API_KEY}|g" \
     -e "s|{{GATEWAY_AUTH_TOKEN}}|${GATEWAY_AUTH_TOKEN}|g" \
+    -e "s|{{DISCORD_BOT_TOKEN}}|${discord_token}|g" \
     "${TEMPLATE}" > "${out}"
 
   log "rendered ${out}"
 }
 
 ensure_venv_ready() {
-  local agent="$1"
-  local project="${REPO_ROOT}/openclaw-livekit-agent-${agent}"
-  local python="${project}/.venv/bin/python"
-
+  # Single root venv for the entire workspace. `uv sync` at the repo
+  # root installs sdk, tools, and every agent as editable workspace
+  # members. Called once before the render loop.
+  local python="${REPO_ROOT}/.venv/bin/python"
   if [[ ! -x "${python}" ]]; then
-    log "syncing venv for ${agent} (first-time uv sync)"
-    (cd "${project}" && uv sync --all-groups)
+    log "syncing root workspace venv (first-time uv sync)"
+    (cd "${REPO_ROOT}" && uv sync --all-groups)
   fi
 }
 
@@ -107,12 +122,12 @@ reload_plist() {
   log "bootstrapped ${label}"
 }
 
+ensure_venv_ready
 for agent in "${agents[@]}"; do
   case "$agent" in
     nyla|aoi|party) ;;
     *) die "unknown agent: $agent (valid: nyla, aoi, party)" ;;
   esac
-  ensure_venv_ready "$agent"
   render_plist "$agent"
   reload_plist  "$agent"
 done

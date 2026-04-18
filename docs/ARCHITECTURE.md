@@ -100,7 +100,8 @@ the top-level compose file and `scripts/register-sip-routing.sh`.
 
 Launchd is handling agent lifecycle today — auto-restart on crash,
 environment injection from a secrets file, log rotation to a known path
-under `~/.openclaw/logs/voice/`. Dropping Python agents into Docker on
+under `./logs/voice/` (or wherever `LIVEKIT_VOICE_LOGS` points).
+Dropping Python agents into Docker on
 macOS adds networking complexity (host mode for WebSocket to livekit-server
 would work, but `uv sync` + hot reload + venv caching get friction-ful).
 
@@ -119,8 +120,8 @@ Current state is "infrastructure as code for the SIP layer" (config in
   someone `lk sip` CLI's their way around the checked-in config.
 - **CI** — pytest on PR, shellcheck for scripts, JSON schema check for
   the config examples.
-- **Secrets rotation** — `~/.openclaw/secrets/livekit-agents.env` is the
-  single file. A rotation workflow could update it + re-run
+- **Secrets rotation** — `secrets/livekit-agents.env` is the single
+  file. A rotation workflow could update it + re-run
   `scripts/deploy-agents.sh` (which re-renders and kickstarts).
 - **Alerting** — `scripts/health-check.sh --json` is already cron-runnable;
   wire to a Discord webhook on `failed > 0`.

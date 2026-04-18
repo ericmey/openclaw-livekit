@@ -1,0 +1,165 @@
+"""Shared setup for the Aoi voice agent.
+
+Mirrors the structure of openclaw-livekit-agent-nyla/src/_shared.py so
+the two agents stay in lockstep until Aoi gets her own specialized
+configuration. When Aoi diverges (her own model tuning, her own tools,
+her own persona quirks), this is the file that changes — the rest of
+agent.py stays generic.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from google.genai import types as genai_types
+from livekit.agents import Agent
+from livekit.agents.beta import EndCallTool
+from livekit.plugins import google as google_plugin
+from livekit.plugins.google.tools import GoogleSearch
+from sdk.config import AgentConfig
+from sdk.constants import NYLA_DISCORD_ROOM
+from sdk.env import load_env
+from tools.academy import AcademyToolsMixin
+from tools.core import CoreToolsMixin
+from tools.memory import MemoryToolsMixin
+from tools.sessions import SessionsToolsMixin
+
+logger = logging.getLogger("openclaw-livekit.agent")
+
+# --- env ---------------------------------------------------------------
+_env_loaded = False
+
+
+def load_env_once() -> None:
+    global _env_loaded
+    if not _env_loaded:
+        load_env()
+        _env_loaded = True
+
+
+# --- persona -----------------------------------------------------------
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+_DEFAULT_PERSONA = "You are Aoi, a voice assistant on a phone call with Eric."
+
+
+def load_persona() -> str:
+    path = _PROMPTS_DIR / "system.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    logger.warning("persona file not found: %s", path)
+    return _DEFAULT_PERSONA
+
+
+# --- agent class -------------------------------------------------------
+
+#: Aoi's operational identity. Shares Nyla's Discord room for now
+#: (she doesn't have her own channel yet); swap ``discord_room`` when
+#: Eric carves one out. Memory goes to the aoi-voice bucket so her
+#: stored context is separable from Nyla's.
+#:
+#: Delegation allowlist is the tight version matching her prompt: she
+#: routes research to Yumi, ops to Rin, spawns herself (``aoi``) for
+#: long-running code work, hands inbox stuff to Momo, and can kick
+#: things back to Nyla for household routing. Creative and image
+#: work (hana, tama) is NOT on the list — her prompt says avoid
+#: image/selfie unless Eric explicitly asks, and the rejection here
+#: forces her to either hand to Nyla or say so plainly. Adjust as we
+#: use her and find gaps.
+AOI_CONFIG = AgentConfig(
+    agent_name="aoi",
+    memory_agent_tag="aoi-voice",
+    discord_room=NYLA_DISCORD_ROOM,
+    allowed_delegation_targets=frozenset(
+        {
+            "yumi",  # research / planning (her prompt's explicit default)
+            "rin",  # ops / health checks (her prompt's explicit default)
+            "aoi",  # spawn herself for long-running code work
+            "momo",  # inbox / email — common technical-adjacent asks
+            "nyla",  # hand back to the household router on explicit ask
+        }
+    ),
+)
+
+
+class AoiAgent(
+    CoreToolsMixin,
+    MemoryToolsMixin,
+    SessionsToolsMixin,
+    AcademyToolsMixin,
+    Agent,
+):
+    """Aoi with all OpenClaw platform tools."""
+
+    config = AOI_CONFIG
+
+    def __init__(
+        self,
+        *,
+        caller_from: str | None = None,
+        instructions: str = "",
+        extra_tools: list | None = None,
+    ) -> None:
+        super().__init__(instructions=instructions, tools=extra_tools or None)
+        self._caller_from: str | None = caller_from
+
+    async def on_enter(self) -> None:
+        # Prefetch recent household context deterministically. Same
+        # reasoning as Nyla: the prompt asks for musubi_recent first, but
+        # the model skips it often enough to be unreliable. Fold the
+        # result into the greeting instructions so it's always available.
+        try:
+            context = await self.fetch_recent_context(hours=24, limit=10)
+        except Exception as err:
+            logger.warning("on_enter: startup context fetch failed: %s", err)
+            context = ""
+
+        if context and context not in {"No recent memories found.", "Memory lookup timed out."}:
+            instructions = (
+                "Greet Eric warmly and casually in one sentence. "
+                "Use the recent household context below only if something "
+                "there is worth picking up on — otherwise just say hi.\n\n"
+                f"Recent household context:\n{context}"
+            )
+        else:
+            instructions = "Greet Eric warmly and casually in one sentence."
+
+        await self.session.generate_reply(instructions=instructions)
+
+
+# --- model + tools (shared) -------------------------------------------
+
+
+def build_model() -> google_plugin.realtime.RealtimeModel:
+    """Gemini 2.5 Flash Native Audio — same VAD tuning as Nyla; Kore voice for contrast."""
+    # VAD tuning (see project_livekit_agent_status memory):
+    # - start=HIGH: commit to user speech faster (reduces barge-in lag).
+    # - end=LOW: explicit; don't end user turn eagerly on pauses.
+    # - prefix_padding_ms=200: quick speech-onset commit.
+    # - silence_duration_ms=1000: Eric can pause up to 1s mid-thought
+    #   without Gemini ending his turn.
+    # Voice = Kore (firm/clear), differentiated from Nyla's Leda (warm/soft)
+    # so Eric can hear which agent he's reached.
+    return google_plugin.realtime.RealtimeModel(
+        model="gemini-2.5-flash-native-audio-latest",
+        voice="Kore",
+        realtime_input_config=genai_types.RealtimeInputConfig(
+            automatic_activity_detection=genai_types.AutomaticActivityDetection(
+                start_of_speech_sensitivity=genai_types.StartSensitivity.START_SENSITIVITY_HIGH,
+                end_of_speech_sensitivity=genai_types.EndSensitivity.END_SENSITIVITY_LOW,
+                prefix_padding_ms=200,
+                silence_duration_ms=1000,
+            ),
+        ),
+    )
+
+
+def build_tools() -> list:
+    """Tool set — same as Nyla until Aoi gets specialized tools."""
+    return [
+        EndCallTool(
+            delete_room=True,
+            end_instructions="Say a brief, warm goodbye to Eric.",
+        ),
+        GoogleSearch(),
+    ]

@@ -18,6 +18,12 @@ build/
 *.env
 *.local.yaml
 *.local.json
+secrets/
 
-# User-local state that belongs in ~/.openclaw/, not here
-~/.openclaw/
+# Real config files (filled in locally; .example templates stay tracked).
+# Matches e.g. config/livekit.yaml but NOT config/livekit.yaml.example.
+config/*.yaml
+config/sip-*.json
+
+# Voice logs — written at runtime.
+logs/
