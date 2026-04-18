@@ -14,9 +14,10 @@ LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 
 log()  { printf "\033[1;34m[teardown]\033[0m %s\n" "$*"; }
 
-agents=( "${@}" )
-if [[ ${#agents[@]} -eq 0 ]]; then
+if [[ $# -eq 0 ]]; then
   agents=(nyla aoi party)
+else
+  agents=("$@")
 fi
 
 for agent in "${agents[@]}"; do

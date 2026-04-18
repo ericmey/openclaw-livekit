@@ -36,10 +36,13 @@ set -a; . "${SECRETS}"; set +a
 : "${GOOGLE_API_KEY:?GOOGLE_API_KEY missing from ${SECRETS}}"
 : "${GATEWAY_AUTH_TOKEN:?GATEWAY_AUTH_TOKEN missing from ${SECRETS}}"
 
-# Agents to deploy (default: all three).
-agents=( "${@}" )
-if [[ ${#agents[@]} -eq 0 ]]; then
+# Agents to deploy (default: all three). Build the array from positional
+# args, or fall back to all three if none were given — the explicit $#
+# check is `set -u`-safe while `"${@}"` with zero args is not.
+if [[ $# -eq 0 ]]; then
   agents=(nyla aoi party)
+else
+  agents=("$@")
 fi
 
 agent_label() {
