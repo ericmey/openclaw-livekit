@@ -52,7 +52,7 @@ class CoreToolsMixin(Agent):
                 ) as resp:
                     if resp.status != 200:
                         trace(f"tool=get_weather NWS status={resp.status}")
-                        return "Couldn't pull up the weather right now."
+                        return f"Couldn't pull weather — NWS returned {resp.status}."
                     data = await resp.json()
 
             props = data.get("properties", {})
@@ -73,12 +73,15 @@ class CoreToolsMixin(Agent):
                 wind_mph = round(wind_speed_kmh * 0.621371)
                 parts.append(f"wind {wind_mph} mph")
 
-            result = ", ".join(parts) if parts else "No weather data available."
+            if not parts:
+                trace("tool=get_weather NO_DATA")
+                return "Couldn't pull weather — NWS returned an empty observation."
+            result = ", ".join(parts)
             trace(f"tool=get_weather DONE result={result[:80]}")
             return f"Current conditions in Carmel: {result}."
         except asyncio.TimeoutError:
             trace("tool=get_weather TIMEOUT")
-            return "Weather lookup timed out."
+            return "Couldn't pull weather — NWS didn't respond in time."
         except Exception as err:
             trace(f"tool=get_weather ERROR {err}")
-            return "Couldn't pull up the weather right now."
+            return f"Couldn't pull weather — NWS lookup failed: {err}."
