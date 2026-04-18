@@ -59,16 +59,38 @@ class TestAgentClass:
         )
         assert agent._caller_from == "+13175551234"
 
-    def test_all_nine_tools_present(self, agent_module):
+    def test_active_tools_present(self, agent_module):
+        """Tools currently exposed to the voice model. schedule_callback
+        is deliberately OFF this list — the cron path isn't wired; see
+        SDK TODO.md for the re-enable plan."""
         agent = agent_module.NylaAgent(instructions="test")
         expected = [
             "get_current_time", "get_weather",
             "musubi_recent", "memory_store",
-            "sessions_send", "sessions_spawn", "schedule_callback",
+            "sessions_send", "sessions_spawn",
             "academy_selfie", "academy_send",
         ]
         for tool in expected:
             assert hasattr(agent, tool), f"Missing tool: {tool}"
+
+    def test_schedule_callback_is_not_a_tool(self, agent_module):
+        """Disabled while the cron payload redesign is open. The method
+        body still exists for guardrail tests to call directly, but it
+        must NOT be @function_tool-decorated so the voice model can't
+        discover or fire it.
+
+        Compare against sessions_send — that one IS decorated and
+        becomes a FunctionTool instance; schedule_callback stays a
+        plain coroutine function so LiveKit's tool scanner skips it.
+        """
+        import inspect
+        send = agent_module.NylaAgent.sessions_send
+        callback = agent_module.NylaAgent.schedule_callback
+        # The enabled tool is a FunctionTool wrapper.
+        assert type(send).__name__ == "FunctionTool"
+        # The disabled method is a plain coroutine function.
+        assert inspect.iscoroutinefunction(callback)
+        assert type(callback).__name__ == "function"
 
     def test_openclaw_request_absent(self, agent_module):
         agent = agent_module.NylaAgent(instructions="test")

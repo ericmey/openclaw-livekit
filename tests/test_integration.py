@@ -210,6 +210,11 @@ class TestDelegationTools:
 class TestCallbackTool:
     """Test schedule_callback."""
 
+    @pytest.mark.skip(
+        reason="schedule_callback is currently disabled — cron payload "
+        "routes through a spawned agent + prose which we're replacing "
+        "with a structured CLI path. See SDK TODO.md for the re-enable plan."
+    )
     @pytest.mark.asyncio
     async def test_schedule_callback(self, agent):
         async with AgentSession(llm=build_model()) as session:
