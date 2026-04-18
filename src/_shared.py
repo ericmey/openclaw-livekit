@@ -74,9 +74,28 @@ class AoiAgent(
         self._caller_from: str | None = caller_from
 
     async def on_enter(self) -> None:
-        await self.session.generate_reply(
-            instructions="Greet Eric warmly and casually."
-        )
+        # Prefetch recent household context deterministically. Same
+        # reasoning as Nyla: the prompt asks for musubi_recent first, but
+        # the model skips it often enough to be unreliable. Fold the
+        # result into the greeting instructions so it's always available.
+        try:
+            context = await self.fetch_recent_context(hours=24, limit=10)
+        except Exception as err:
+            logger.warning("on_enter: startup context fetch failed: %s", err)
+            context = ""
+
+        if context and context not in {"No recent memories found.",
+                                       "Memory lookup timed out."}:
+            instructions = (
+                "Greet Eric warmly and casually in one sentence. "
+                "Use the recent household context below only if something "
+                "there is worth picking up on — otherwise just say hi.\n\n"
+                f"Recent household context:\n{context}"
+            )
+        else:
+            instructions = "Greet Eric warmly and casually in one sentence."
+
+        await self.session.generate_reply(instructions=instructions)
 
 
 # --- model + tools (shared) -------------------------------------------
