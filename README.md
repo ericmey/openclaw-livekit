@@ -34,7 +34,7 @@ procedure.
 - [openclaw-livekit-agent-aoi](https://github.com/ericmey/openclaw-livekit-agent-aoi) — Aoi persona (Gemini 2.5 realtime)
 - [openclaw-livekit-agent-nyla](https://github.com/ericmey/openclaw-livekit-agent-nyla) — Nyla persona (Gemini 2.5 realtime)
 - [openclaw-livekit-agent-party](https://github.com/ericmey/openclaw-livekit-agent-party) — chained STT/LLM/TTS baseline
-- [openclaw-livekit-bridge](https://github.com/ericmey/openclaw-livekit-bridge) — Twilio ↔ LiveKit telephony bridge
+- [openclaw-livekit-sip](https://github.com/ericmey/openclaw-livekit-sip) — livekit-sip runtime + Twilio SIP trunk config
 
 ## License
 

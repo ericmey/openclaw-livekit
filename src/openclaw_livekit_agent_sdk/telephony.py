@@ -1,33 +1,19 @@
-"""Transport-agnostic caller info resolver.
+"""Caller info resolver for SIP-trunked voice calls.
 
-The OpenClaw voice stack ingests phone calls via two transports:
+``livekit-sip`` creates the room and the caller joins as a ``SIP`` kind
+participant before the agent's entrypoint runs. Caller identity lives
+on ``participant.attributes`` keyed by ``sip.from``, ``sip.callID``,
+``sip.trunkPhoneNumber``.
 
-1. **Twilio Media Streams** (current) — the Node bridge
-   (``openclaw-livekit-bridge``) packs ``{"callSid", "from", "to"}`` into
-   ``ctx.job.metadata`` as a JSON string before the agent's entrypoint
-   runs. Metadata is available immediately.
-
-2. **SIP trunking** (planned) — ``livekit-sip`` creates the room and the
-   caller joins as a ``SIP`` participant. Caller identity lives on
-   ``participant.attributes`` keyed by ``sip.from``, ``sip.callID``,
-   ``sip.trunkPhoneNumber``. The dispatch rule may additionally set a
-   string on ``ctx.job.metadata``, but it will NOT have the Twilio
-   bridge shape — it carries routing hints only.
-
-``resolve_caller()`` papers over both so personas can be A/B'd across
-transports without branching in their entrypoints. Call it AFTER
-``await ctx.connect()`` — the SIP path needs a connected room to read
-remote participants.
-
-The ``source`` field on the returned ``CallerInfo`` records which
-transport served the call. Useful for telemetry comparisons during the
-A/B window.
+``resolve_caller()`` reads those attributes and returns a
+``CallerInfo`` for the agent's entrypoint to use. Call it AFTER
+``await ctx.connect()`` — we need a connected room to read remote
+participants.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from typing import Literal
@@ -44,23 +30,19 @@ logger = logging.getLogger("openclaw-livekit.telephony")
 # so the entrypoint can't hang forever on a misconfigured dispatch.
 DEFAULT_SIP_WAIT_SECONDS = 5.0
 
-CallerSource = Literal["bridge", "sip", "unknown"]
+CallerSource = Literal["sip", "unknown"]
 
 
 @dataclass(frozen=True)
 class CallerInfo:
-    """Transport-normalized caller information.
+    """Normalized caller information.
 
     All fields are best-effort — callers should handle ``None``
     gracefully. ``source`` is always set.
     """
 
     call_id: str | None
-    """Unique identifier for this call.
-
-    Bridge: Twilio's ``CallSid`` (e.g. ``CA1234...``).
-    SIP: the SIP ``Call-ID`` header (e.g. a UUID-ish string).
-    """
+    """Unique identifier for this call — the SIP ``Call-ID`` header."""
 
     caller_from: str | None
     """Caller's phone number in E.164, if available."""
@@ -69,33 +51,10 @@ class CallerInfo:
     """The DID the caller reached (the 'to' number)."""
 
     source: CallerSource
-    """Which transport delivered this call: ``"bridge"``, ``"sip"``, or
-    ``"unknown"`` (neither path produced identifying info — rare;
-    logged as a warning)."""
-
-
-def _parse_bridge_metadata(raw: str | None) -> CallerInfo | None:
-    """Return a CallerInfo if ``raw`` looks like bridge-shape metadata, else None."""
-    if not raw:
-        return None
-    try:
-        meta = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        logger.warning("job.metadata was not JSON: %r", raw)
-        return None
-    if not isinstance(meta, dict):
-        return None
-    # The bridge always includes at least one of these two keys. If
-    # neither is present, treat the metadata as "something else"
-    # (likely a SIP dispatch rule's routing hint) and fall through.
-    if "from" not in meta and "callSid" not in meta:
-        return None
-    return CallerInfo(
-        call_id=meta.get("callSid"),
-        caller_from=meta.get("from"),
-        dialed_number=meta.get("to"),
-        source="bridge",
-    )
+    """``"sip"`` when the SIP participant was resolved, ``"unknown"``
+    when neither a participant nor dispatch metadata produced
+    identifying info within the wait budget (rare; logged as a warning).
+    """
 
 
 async def _wait_for_sip_participant(
@@ -139,27 +98,19 @@ async def resolve_caller(
     *,
     sip_wait_seconds: float = DEFAULT_SIP_WAIT_SECONDS,
 ) -> CallerInfo:
-    """Resolve caller info regardless of transport.
+    """Resolve caller info from the SIP participant on ``ctx.room``.
 
-    Checks ``ctx.job.metadata`` first (bridge path). If that's empty or
-    doesn't look like a bridge payload, waits for a SIP participant in
-    ``ctx.room.remote_participants`` (SIP path). Falls back to an
-    all-``None`` CallerInfo with ``source="unknown"`` if neither
-    produces anything within ``sip_wait_seconds``.
+    Falls back to an all-``None`` ``CallerInfo`` with ``source="unknown"``
+    if no SIP participant appears within ``sip_wait_seconds``.
 
     Call AFTER ``await ctx.connect()``.
     """
-    bridge = _parse_bridge_metadata(ctx.job.metadata)
-    if bridge is not None:
-        return bridge
-
     participant = await _wait_for_sip_participant(ctx.room, sip_wait_seconds)
     if participant is not None:
         return _caller_info_from_sip_participant(participant)
 
     logger.warning(
-        "resolve_caller: no bridge metadata and no SIP participant within %.1fs "
-        "(room=%s metadata=%r)",
+        "resolve_caller: no SIP participant within %.1fs (room=%s metadata=%r)",
         sip_wait_seconds,
         ctx.room.name,
         ctx.job.metadata,
