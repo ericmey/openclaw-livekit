@@ -44,7 +44,7 @@ class SimConfig:
     identity: str = "eric-test"
     room_prefix: str = "sim-test"
     # How long to wait for the agent to respond to each message (seconds).
-    # Must be generous — tool calls (musubi, openclaw_request) can take 10-15s
+    # Must be generous — tool calls (musubi, embedding) can take a few seconds
     # before the agent even starts generating its text response.
     response_timeout: float = 45.0
     # How long to wait for agent to join after dispatch (seconds)
@@ -81,10 +81,10 @@ CONVERSATION: list[tuple[str, str]] = [
         "Ha, that's right. You know, sometimes I wonder if we spend too much time on technical stuff and not enough just hanging out.",
         "conversational — should respond naturally, NO tool call expected",
     ),
-    # 6. Ask something that might trigger openclaw_request
+    # 6. Delegate to another agent — fire-and-forget via sessions_send
     (
-        "Speaking of the other girls, do you know if Nyla has said anything about the livekit migration? I want to make sure she's in the loop.",
-        "TOOL: openclaw_request or sessions_send — should try to check with Nyla",
+        "Speaking of the other girls, can you ping Hana and ask her how the livekit migration is going? I want to make sure she's in the loop.",
+        "TOOL: sessions_send — should fire-and-forget a message to Hana",
     ),
     # 7. Casual wind-down
     (
