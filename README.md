@@ -42,7 +42,7 @@ variables.
 - [openclaw-livekit-agent-sdk](https://github.com/ericmey/openclaw-livekit-agent-sdk) — shared runtime
 - [openclaw-livekit-agent-aoi](https://github.com/ericmey/openclaw-livekit-agent-aoi) — realtime persona
 - [openclaw-livekit-agent-nyla](https://github.com/ericmey/openclaw-livekit-agent-nyla) — realtime persona
-- [openclaw-livekit-bridge](https://github.com/ericmey/openclaw-livekit-bridge) — Twilio ↔ LiveKit bridge
+- [openclaw-livekit-sip](https://github.com/ericmey/openclaw-livekit-sip) — livekit-sip runtime + Twilio SIP trunk config
 
 ## License
 
