@@ -55,17 +55,7 @@ class NylaAgent(
     AcademyToolsMixin,
     Agent,
 ):
-    """Nyla with all OpenClaw platform tools.
-
-    openclaw_request is excluded — it blocks the Gemini realtime session
-    for 10-15s waiting on a gateway response, which breaks the call if
-    the user speaks during the wait.  Use sessions_send (fire-and-forget)
-    or musubi_recent (fast, <500ms) instead.
-    """
-
-    # Disable openclaw_request — inherited from CoreToolsMixin but too slow
-    # for real-time voice.  Setting to None removes it from the tool registry.
-    openclaw_request = None
+    """Nyla with all OpenClaw platform tools."""
 
     def __init__(
         self,

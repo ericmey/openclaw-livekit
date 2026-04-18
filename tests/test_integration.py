@@ -219,23 +219,3 @@ class TestCallbackTool:
             r.expect.contains_function_call(name="schedule_callback")
 
 
-class TestOpenclawRequestDisabled:
-    """openclaw_request must not be available — disabled on NylaAgent."""
-
-    @pytest.mark.asyncio
-    async def test_openclaw_request_not_called(self, agent):
-        async with AgentSession(llm=build_model()) as session:
-            greeting = await session.start(agent, capture_run=True)
-            await greeting
-
-            r = await session.run(
-                user_input="Can you check on the other agents and see what they're working on?"
-            )
-            await r
-
-            # Verify openclaw_request was NOT called
-            for event in r.events:
-                if isinstance(event, FunctionCallEvent):
-                    assert event.item.name != "openclaw_request", (
-                        "openclaw_request should be disabled but was called"
-                    )
