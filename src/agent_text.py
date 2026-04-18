@@ -26,7 +26,7 @@ load_env_once()
 logger = logging.getLogger("openclaw-livekit.agent")
 
 # --- server + session --------------------------------------------------
-server = AgentServer(port=8083)
+server = AgentServer(port=8084)  # 8083 is reserved for phone-party
 
 
 @server.rtc_session(agent_name="phone-nyla-text")
