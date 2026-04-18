@@ -43,10 +43,16 @@ QDRANT_URL = (
 )
 MUSUBI_COLLECTION = "musubi_memories"
 
-# Skip entire module if no API key
+# Opt-in gate. These tests drive a real Gemini session and every tool
+# runs against production — Discord messages get sent, Musubi memories
+# get written, cron jobs get scheduled, images get rendered. Dev boxes
+# have GOOGLE_API_KEY set by default, so keying off that alone would let
+# `pytest` create real side effects on every local run. Require an
+# explicit opt-in instead.
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("GOOGLE_API_KEY"),
-    reason="GOOGLE_API_KEY not set — cannot run integration tests",
+    os.environ.get("RUN_INTEGRATION_TESTS") != "1",
+    reason="integration tests hit real services (Discord, Musubi, cron); "
+           "set RUN_INTEGRATION_TESTS=1 to opt in",
 )
 
 # Pause between turns — lets the model finish speaking before the next
