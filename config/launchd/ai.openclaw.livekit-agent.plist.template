@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template for ai.openclaw.livekit-agent-<name>.plist.
+
+  Substitutions (handled by scripts/deploy-agents.sh):
+    {{AGENT_NAME}}        nyla | aoi | party
+    {{AGENT_LABEL}}       human-readable description
+    {{MONOREPO_ROOT}}     absolute path to the openclaw-livekit checkout
+    {{OPENCLAW_HOME}}     typically ~/.openclaw
+
+  Secrets (LIVEKIT_*, GOOGLE_API_KEY, GATEWAY_AUTH_TOKEN) are pulled from
+  ~/.openclaw/secrets/livekit-agents.env by the deploy script. They are
+  NOT rendered into the committed-on-disk plist — instead the plist sets
+  them via substitutions at deploy time. Edit the secrets file to rotate,
+  then re-run scripts/deploy-agents.sh.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>ai.openclaw.livekit-agent-{{AGENT_NAME}}</string>
+
+    <key>Comment</key>
+    <string>OpenClaw LiveKit agent — {{AGENT_LABEL}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>{{MONOREPO_ROOT}}/openclaw-livekit-agent-{{AGENT_NAME}}/.venv/bin/python</string>
+      <string>{{MONOREPO_ROOT}}/openclaw-livekit-agent-{{AGENT_NAME}}/src/agent.py</string>
+      <string>start</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{MONOREPO_ROOT}}/openclaw-livekit-agent-{{AGENT_NAME}}</string>
+
+    <key>StandardOutPath</key>
+    <string>{{OPENCLAW_HOME}}/logs/voice/agent-{{AGENT_NAME}}.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{OPENCLAW_HOME}}/logs/voice/agent-{{AGENT_NAME}}.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>HOME</key>
+      <string>{{HOME}}</string>
+      <key>PATH</key>
+      <string>/opt/homebrew/bin:/opt/homebrew/opt/node/bin:/usr/local/bin:/usr/bin:/bin</string>
+      <key>OPENCLAW_HOME</key>
+      <string>{{OPENCLAW_HOME}}</string>
+      <key>OPENCLAW_BIN</key>
+      <string>/opt/homebrew/bin/openclaw</string>
+      <key>LIVEKIT_URL</key>
+      <string>{{LIVEKIT_URL}}</string>
+      <key>LIVEKIT_API_KEY</key>
+      <string>{{LIVEKIT_API_KEY}}</string>
+      <key>LIVEKIT_API_SECRET</key>
+      <string>{{LIVEKIT_API_SECRET}}</string>
+      <key>GOOGLE_API_KEY</key>
+      <string>{{GOOGLE_API_KEY}}</string>
+      <key>GATEWAY_AUTH_TOKEN</key>
+      <string>{{GATEWAY_AUTH_TOKEN}}</string>
+      <key>NODE_EXTRA_CA_CERTS</key>
+      <string>/etc/ssl/cert.pem</string>
+    </dict>
+  </dict>
+</plist>

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Secrets — these should never be in git
+*.env
+*.local.yaml
+*.local.json
+
+# User-local state that belongs in ~/.openclaw/, not here
+~/.openclaw/

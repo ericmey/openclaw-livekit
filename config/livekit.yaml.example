@@ -1,0 +1,28 @@
+# livekit-server runtime config.
+#
+# Copy to ~/.openclaw/config/livekit.yaml and edit:
+#   - `keys`: generate a strong secret; the devkey/devsecret default below is
+#     only useful for a first-boot smoke test on a disconnected box.
+#   - `redis.address`: leave as-is if you're running the shipped compose
+#     (redis service is reachable from the server container at
+#     host.docker.internal:6379 on Mac, or redis:6379 if you prefer the
+#     container's service name on Linux).
+#
+# Bind-mounted into the openclaw-livekit-server container at /etc/livekit.yaml.
+
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: true
+
+# livekit-sip coordination. Without this, `lk sip ...` returns
+# "sip not connected (redis required)".
+redis:
+  address: host.docker.internal:6379
+
+keys:
+  devkey: devsecret-change-me-before-real-use
+
+log_level: info

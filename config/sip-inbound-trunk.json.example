@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Inbound SIP trunk — defines which DIDs this livekit-sip instance services",
+    "and which caller numbers are allowed to reach it.",
+    "",
+    "Copy to ~/.openclaw/config/sip-inbound-trunk.json and register with:",
+    "  lk sip inbound create ~/.openclaw/config/sip-inbound-trunk.json",
+    "",
+    "Or via scripts/register-sip-routing.sh which is idempotent.",
+    "",
+    "Fields:",
+    "  - `name`            : human-readable label",
+    "  - `numbers`         : the DIDs you've pointed at this livekit-sip via",
+    "                        Twilio's Origination Connection Policy",
+    "  - `allowed_numbers` : caller allowlist. Any caller outside this list is",
+    "                        rejected at the trunk before any dispatch rule",
+    "                        evaluation. LEAVE EMPTY to accept everyone."
+  ],
+
+  "trunk": {
+    "name": "twilio-primary",
+
+    "numbers": [
+      "+15550000001",
+      "+15550000002"
+    ],
+
+    "allowed_numbers": [
+      "+15559999999"
+    ]
+  }
+}

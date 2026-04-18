@@ -1,0 +1,74 @@
+# OpenClaw LiveKit infrastructure.
+#
+# Orchestrates the container-side services: livekit-server (WebRTC signaling +
+# TURN), livekit-sip (SIP trunk to Twilio, room dispatch), and redis (shared
+# state between the two).
+#
+# NOT in this compose file: the Python voice agents (nyla, aoi, party).
+# Agents run as macOS launch agents via launchd, rendered from templates in
+# config/launchd/. Rationale: host-native Python venvs with hot reload + crash
+# restart are simpler on this box than wrestling with containerized Python on
+# Docker Desktop. See docs/ARCHITECTURE.md for the long version.
+#
+# Pre-flight:
+#   1. Stop brew's redis if you had one running:
+#        brew services stop redis
+#      (compose redis listens on the same 127.0.0.1:6379 port)
+#   2. Make sure ~/.openclaw/config/ has the three config files this compose
+#      bind-mounts in. Use scripts/bootstrap.sh to copy templates into place.
+#   3. On macOS: enable host networking in Docker Desktop (Settings > Resources
+#      > Network). livekit-sip needs it to advertise the host's real IP in SDP
+#      and to forward RTP on 10000-20000/udp.
+#
+# Bring up:  docker compose up -d
+# Bring down: docker compose down
+# Tail logs:  docker compose logs -f
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: openclaw-redis
+    restart: unless-stopped
+    # Ephemeral by design — livekit-sip + livekit-server only store live
+    # session state here. Losing it drops any in-flight call; it doesn't
+    # corrupt anything persistent.
+    command:
+      - "redis-server"
+      - "--save"
+      - ""
+      - "--appendonly"
+      - "no"
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  livekit-server:
+    image: livekit/livekit-server:v1.10.1
+    container_name: openclaw-livekit-server
+    restart: unless-stopped
+    depends_on:
+      - redis
+    # Bridge networking + explicit port forwards. WebRTC clients connect
+    # through 7880 (WebSocket signaling) and 7882 (UDP TURN); the TCP TURN
+    # fallback is 7881.
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ${HOME}/.openclaw/config/livekit.yaml:/etc/livekit.yaml:ro
+    command: ["--config", "/etc/livekit.yaml"]
+
+  livekit-sip:
+    image: livekit/sip:v1.2.0
+    container_name: openclaw-livekit-sip
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - livekit-server
+    # Host networking is required — see the top-of-file preflight note.
+    # Bridge mode can't forward the 10k-port RTP range cleanly and SDP
+    # advertisement gets mangled.
+    network_mode: host
+    volumes:
+      - ${HOME}/.openclaw/config/livekit-sip.yaml:/config.yaml:ro
+    command: ["--config", "/config.yaml"]

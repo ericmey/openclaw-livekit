@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Dispatch rule — routes inbound calls for specific DIDs to the",
+    "phone-nyla agent. One file per agent; see sibling files for aoi and party.",
+    "",
+    "Copy to ~/.openclaw/config/sip-dispatch-nyla.json and register via",
+    "scripts/register-sip-routing.sh.",
+    "",
+    "NUMBER FILTER FIELDS — do not confuse them:",
+    "  `numbers`         — matches when caller dialed one of these DIDs (TO).",
+    "                      This is the field for per-DID routing.",
+    "  `inbound_numbers` — matches when caller's own number is in this list",
+    "                      (FROM). Only for per-caller allowlisting at rule",
+    "                      layer; the trunk's allowed_numbers is usually the",
+    "                      better place.",
+    "",
+    "See docs/DISPATCH-RULE-GOTCHAS.md for the full story on why this matters."
+  ],
+
+  "dispatch_rule": {
+    "name": "twilio-to-phone-nyla",
+
+    "numbers": [
+      "+15550000001"
+    ],
+
+    "rule": {
+      "dispatchRuleIndividual": {
+        "roomPrefix": "phone"
+      }
+    },
+
+    "room_config": {
+      "agents": [
+        {
+          "agentName": "phone-nyla",
+          "metadata": "{\"route\":\"default\",\"source\":\"sip\"}"
+        }
+      ]
+    }
+  }
+}
