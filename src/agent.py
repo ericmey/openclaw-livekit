@@ -28,6 +28,8 @@ from livekit.plugins import google as google_plugin
 from livekit.plugins import openai as openai_plugin
 from livekit.plugins import silero as silero_plugin
 
+from openclaw_livekit_agent_sdk.config import AgentConfig
+from openclaw_livekit_agent_sdk.constants import NYLA_DISCORD_ROOM
 from openclaw_livekit_agent_sdk.env import load_env
 from openclaw_livekit_agent_sdk.telephony import resolve_caller
 from openclaw_livekit_agent_sdk.tools.academy import AcademyToolsMixin
@@ -61,6 +63,18 @@ def _load_persona() -> str:
 
 
 # --- agent class -------------------------------------------------------
+
+#: Party's operational identity. The Harem World line is Nyla on the
+#: chained STT/LLM/TTS pipeline, so the config mirrors Nyla's. If the
+#: Party line ever gets its own identity, fork this config.
+PARTY_CONFIG = AgentConfig(
+    agent_name="nyla",
+    memory_agent_tag="nyla-voice",
+    discord_room=NYLA_DISCORD_ROOM,
+    allowed_delegation_targets=None,
+)
+
+
 class PartyAgent(
     CoreToolsMixin,
     MemoryToolsMixin,
@@ -70,9 +84,11 @@ class PartyAgent(
 ):
     """Harem World agent with full OpenClaw platform tool set.
 
-    Uses the default ``memory_agent_tag = "nyla-voice"`` since the
-    Harem World line is Nyla on the chained pipeline.
+    Config matches Nyla's because the Harem World line is Nyla on the
+    chained pipeline — same person, different voice engine.
     """
+
+    config = PARTY_CONFIG
 
     def __init__(
         self,

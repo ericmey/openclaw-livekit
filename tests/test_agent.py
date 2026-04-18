@@ -48,9 +48,13 @@ class TestAgentClass:
         from openclaw_livekit_agent_sdk.tools.academy import AcademyToolsMixin
         assert issubclass(agent_module.PartyAgent, AcademyToolsMixin)
 
-    def test_memory_tag_is_nyla_voice(self, agent_module):
-        """Harem World line stores memories under the Nyla-voice bucket."""
-        assert agent_module.PartyAgent.memory_agent_tag == "nyla-voice"
+    def test_config_is_nyla_identity(self, agent_module):
+        """Harem World line uses Nyla's operational identity — same person,
+        different voice engine."""
+        cfg = agent_module.PartyAgent.config
+        assert cfg.agent_name == "nyla"
+        assert cfg.memory_agent_tag == "nyla-voice"
+        assert cfg.discord_room.startswith("channel:")
 
     def test_construction_with_defaults(self, agent_module):
         agent = agent_module.PartyAgent(instructions="test")
