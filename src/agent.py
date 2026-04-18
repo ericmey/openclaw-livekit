@@ -41,7 +41,7 @@ logger = logging.getLogger("openclaw-livekit.agent")
 
 # ElevenLabs voice ID (Harem World default — Nyla's voice for now).
 _ELEVENLABS_VOICE_ID = "AEW6JTgnyoPaoB9zlK3S"
-_ELEVENLABS_MODEL = "eleven_v3"
+_ELEVENLABS_MODEL = "eleven_flash_v2_5"  # streaming-compatible; eleven_v3 doesn't support multi-stream WS
 _CHAINED_LLM_MODEL = "gemini-3.1-flash-lite-preview"
 
 # --- persona -----------------------------------------------------------
