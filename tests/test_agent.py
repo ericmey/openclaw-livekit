@@ -60,12 +60,15 @@ class TestAgentClass:
         agent = agent_module.PartyAgent(instructions="test")
         assert agent._caller_from is None
 
-    def test_all_nine_tools_present(self, agent_module):
+    def test_active_tools_present(self, agent_module):
+        """Tools currently exposed to the voice model. schedule_callback
+        is deliberately OFF this list — the cron path isn't wired; see
+        SDK TODO.md for the re-enable plan."""
         agent = agent_module.PartyAgent(instructions="test")
         expected = [
             "get_current_time", "get_weather",
             "musubi_recent", "memory_store",
-            "sessions_send", "sessions_spawn", "schedule_callback",
+            "sessions_send", "sessions_spawn",
             "academy_selfie", "academy_send",
         ]
         for tool in expected:
