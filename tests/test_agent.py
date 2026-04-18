@@ -75,6 +75,13 @@ class TestAgentClass:
         attr = getattr(agent, "openclaw_request", None)
         assert not callable(attr), "openclaw_request was deleted in SDK cleanup"
 
+    def test_config_is_aoi_identity(self, agent_module):
+        """Aoi's config must tag memories to aoi-voice and set her own agent name."""
+        cfg = agent_module.AoiAgent.config
+        assert cfg.agent_name == "aoi"
+        assert cfg.memory_agent_tag == "aoi-voice"
+        assert cfg.discord_room.startswith("channel:")
+
 
 class TestPersona:
     """Verify persona loading from prompts/system.md."""
