@@ -2,8 +2,8 @@
 
 Nyla voice agent — a realtime voice persona built on the LiveKit Agents SDK
 and Google's Gemini 2.5 Flash Native Audio API. Registers as `phone-nyla`
-with LiveKit; the [bridge](https://github.com/ericmey/openclaw-livekit-bridge)
-dispatches per-call rooms to it.
+with LiveKit; a [livekit-sip](https://github.com/ericmey/openclaw-livekit-sip)
+dispatch rule routes inbound PSTN calls to it.
 
 Ships with both a voice entrypoint (`src/agent.py`) and a text-only
 variant (`src/agent_text.py`) sharing model / tool / persona configuration
@@ -39,7 +39,7 @@ and the required environment variables.
 - [openclaw-livekit-agent-sdk](https://github.com/ericmey/openclaw-livekit-agent-sdk) — shared runtime
 - [openclaw-livekit-agent-aoi](https://github.com/ericmey/openclaw-livekit-agent-aoi) — sister persona
 - [openclaw-livekit-agent-party](https://github.com/ericmey/openclaw-livekit-agent-party) — chained-pipeline variant
-- [openclaw-livekit-bridge](https://github.com/ericmey/openclaw-livekit-bridge) — Twilio ↔ LiveKit bridge
+- [openclaw-livekit-sip](https://github.com/ericmey/openclaw-livekit-sip) — livekit-sip runtime + Twilio SIP trunk config
 
 ## License
 
