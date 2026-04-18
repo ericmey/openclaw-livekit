@@ -88,11 +88,11 @@ class TestPersona:
         content = prompt_path.read_text(encoding="utf-8").strip()
         assert len(content) > 100, "Persona file seems too short"
 
-    def test_prompt_contains_nyla_identity(self):
-        """During A/B testing, Aoi runs Nyla's persona."""
+    def test_prompt_contains_aoi_identity(self):
+        """Aoi's prompt must establish her own identity."""
         prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
         content = prompt_path.read_text(encoding="utf-8")
-        assert "Nyla" in content, "Persona must mention Nyla (A/B testing phase)"
+        assert "You are Aoi" in content, "Persona must establish Aoi's identity"
 
     def test_load_persona_function(self):
         from _shared import load_persona
