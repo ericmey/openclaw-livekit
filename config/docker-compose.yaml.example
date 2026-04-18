@@ -23,7 +23,9 @@ services:
     # session tracking; losing it just means any in-flight call drops.
 
   livekit-sip:
-    image: livekit/sip:latest
+    # Pinned. Bump deliberately (verify against release notes + rerun a
+    # full inbound call) — never let `:latest` drift in on its own.
+    image: livekit/sip:v1.2.0
     container_name: openclaw-livekit-sip
     depends_on:
       - redis
