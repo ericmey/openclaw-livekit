@@ -52,16 +52,21 @@ class TestAgentClass:
         agent = agent_module.PartyAgent(instructions="test")
         assert agent._caller_from is None
 
-    def test_all_ten_tools_present(self, agent_module):
+    def test_all_nine_tools_present(self, agent_module):
         agent = agent_module.PartyAgent(instructions="test")
         expected = [
-            "get_current_time", "get_weather", "openclaw_request",
+            "get_current_time", "get_weather",
             "musubi_recent", "memory_store",
             "sessions_send", "sessions_spawn", "schedule_callback",
             "academy_selfie", "academy_send",
         ]
         for tool in expected:
             assert hasattr(agent, tool), f"Missing tool: {tool}"
+
+    def test_openclaw_request_absent(self, agent_module):
+        agent = agent_module.PartyAgent(instructions="test")
+        attr = getattr(agent, "openclaw_request", None)
+        assert not callable(attr), "openclaw_request was deleted in SDK cleanup"
 
 
 class TestPersona:
