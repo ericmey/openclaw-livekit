@@ -37,23 +37,15 @@ class MemoryToolsMixin(Agent):
     #: ingestion separates voices.
     memory_agent_tag: str = "nyla-voice"
 
-    @function_tool
-    async def musubi_recent(self, hours: int = 24, limit: int = 10) -> str:
-        """Fetch recent memories from all agents in the household.
+    async def fetch_recent_context(self, hours: int = 24, limit: int = 10) -> str:
+        """Plain-async fetch of recent household memories.
 
-        Invocation Condition: Invoke this tool whenever the user asks
-        about recent activity, what agents have been doing, what you
-        talked about before, or what's been going on. Also invoke at the
-        start of a call to load context. Examples: "What's everyone been
-        up to?", "What did we talk about yesterday?", "How's the house?"
-        You MUST call this tool before making any claims about recent
-        agent activity or past conversations.
-
-        Args:
-            hours: How many hours back to look (default 24).
-            limit: Maximum number of memories to return (default 10).
+        This is the same logic as the ``musubi_recent`` tool, exposed
+        without the ``@function_tool`` wrapper so agent code can prefetch
+        context deterministically at ``on_enter`` time — before the LLM
+        gets a chance to skip calling the tool.
         """
-        trace(f"tool=musubi_recent hours={hours} limit={limit}")
+        trace(f"fetch_recent_context hours={hours} limit={limit}")
         cutoff_epoch = time.time() - (hours * 3600)
         body: dict[str, Any] = {
             "filter": {
@@ -104,6 +96,26 @@ class MemoryToolsMixin(Agent):
             content = payload.get("content") or ""
             lines.append(f"[{agent_name}] {content}")
         return "\n\n".join(lines)
+
+    @function_tool
+    async def musubi_recent(self, hours: int = 24, limit: int = 10) -> str:
+        """Fetch recent memories from all agents in the household.
+
+        Invocation Condition: Invoke this tool whenever the user asks
+        about recent activity, what agents have been doing, what you
+        talked about before, or what's been going on. Examples: "What's
+        everyone been up to?", "What did we talk about yesterday?",
+        "How's the house?" You MUST call this tool before making any
+        claims about recent agent activity or past conversations.
+
+        Start-of-call context is already injected into your instructions
+        by the runtime — you don't need to call this tool just to greet.
+
+        Args:
+            hours: How many hours back to look (default 24).
+            limit: Maximum number of memories to return (default 10).
+        """
+        return await self.fetch_recent_context(hours=hours, limit=limit)
 
     @function_tool
     async def memory_store(self, content: str, tags: list[str] | None = None) -> str:

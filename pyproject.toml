@@ -13,5 +13,17 @@ dependencies = [
     "python-dotenv",
 ]
 
+[dependency-groups]
+# Declared explicitly so `uv sync` installs them deterministically. The
+# SDK's telephony tests use @pytest.mark.asyncio — without pytest-asyncio
+# they silently turn into sync no-ops that never exercise the async code.
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+
 [tool.setuptools.packages.find]
 where = ["src"]
