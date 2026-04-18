@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Dispatch rule template — single shared room, all callers join the same room.",
+    "Uses the modern CreateSIPDispatchRuleRequest.dispatch_rule form.",
+    "",
+    "Use this when you want a 'party line' experience: multiple callers into one",
+    "room, one agent handling them. Rarely what you want for normal phone support",
+    "— prefer dispatch-rule-per-call.json.example for that.",
+    "",
+    "Apply with:",
+    "  lk sip dispatch create config/dispatch-rule-direct.json --trunks <trunk-id>",
+    "",
+    "See dispatch-rule-per-call.json.example for the full `numbers` vs",
+    "`inbound_numbers` explanation. Short version: `numbers` filters by the DID",
+    "that was dialed; `inbound_numbers` filters by the caller's own number."
+  ],
+
+  "dispatch_rule": {
+    "name": "twilio-party-room",
+
+    "numbers": [
+      "+15550000000"
+    ],
+
+    "rule": {
+      "dispatchRuleDirect": {
+        "roomName": "phone-party-shared"
+      }
+    },
+
+    "room_config": {
+      "agents": [
+        {
+          "agentName": "phone-party",
+          "metadata": "{\"route\":\"party-line\",\"source\":\"sip\"}"
+        }
+      ]
+    }
+  }
+}

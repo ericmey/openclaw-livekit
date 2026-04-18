@@ -1,0 +1,61 @@
+{
+  "_comment": [
+    "Dispatch rule template — one room per call, routed by dialed DID to a",
+    "specific agent. Uses the modern CreateSIPDispatchRuleRequest.dispatch_rule",
+    "form (SIPDispatchRuleInfo). The deprecated flat-field form still works but",
+    "has confusingly inverted semantics for `inbound_numbers` — don't use it.",
+    "",
+    "Apply with:",
+    "  lk sip dispatch create config/dispatch-rule-per-call.json --trunks <trunk-id>",
+    "",
+    "THE TWO NUMBER FILTER FIELDS — do not confuse them:",
+    "",
+    "  `numbers`         — rule matches when the caller dialed one of these",
+    "                      DIDs. This maps to req.CalledNumber (the TO leg).",
+    "                      THIS IS THE FIELD YOU ALMOST ALWAYS WANT for per-DID",
+    "                      routing.",
+    "",
+    "  `inbound_numbers` — rule matches when the caller's own number is in this",
+    "                      list. This maps to req.CallingNumber (the FROM leg).",
+    "                      Only useful if you want per-caller allowlisting at",
+    "                      the rule layer. The trunk's AllowedNumbers field is",
+    "                      a better place for that in most setups.",
+    "",
+    "We shipped with `inbound_numbers` pointed at DIDs once and every call 486'd",
+    "as 'flood' (DispatchNoRuleDrop) — the livekit-sip log reason string is",
+    "misleading. Keep the comment above honest.",
+    "",
+    "Fields to edit before applying:",
+    "  - `name`                                       human-readable label",
+    "  - `numbers`                                    DID(s) this rule matches on (E.164)",
+    "  - `rule.dispatchRuleIndividual.roomPrefix`     rooms will be <prefix>_<caller>_<random>",
+    "  - `room_config.agents[0].agentName`            which Python worker joins",
+    "                                                 (phone-nyla | phone-aoi | phone-party)",
+    "  - `room_config.agents[0].metadata`             JSON passed as ctx.job.metadata",
+    "",
+    "Docs: https://docs.livekit.io/sip/dispatch-rule/"
+  ],
+
+  "dispatch_rule": {
+    "name": "twilio-to-phone-nyla",
+
+    "numbers": [
+      "+15550000000"
+    ],
+
+    "rule": {
+      "dispatchRuleIndividual": {
+        "roomPrefix": "phone"
+      }
+    },
+
+    "room_config": {
+      "agents": [
+        {
+          "agentName": "phone-nyla",
+          "metadata": "{\"route\":\"default\",\"source\":\"sip\"}"
+        }
+      ]
+    }
+  }
+}
