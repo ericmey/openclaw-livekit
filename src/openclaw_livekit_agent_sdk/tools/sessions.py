@@ -212,7 +212,18 @@ class SessionsToolsMixin(Agent):
         )
         return f"Spawned {agent_value} to handle the task."
 
-    @function_tool
+    # TOOL DISABLED — see TODO.md "Re-enable schedule_callback".
+    #
+    # The @function_tool decorator is intentionally removed so the voice
+    # model can't discover or call this. The method body, validation,
+    # and guardrail logic are all preserved (and still exercised by
+    # tests/test_callback_guardrails.py via direct coroutine calls) so
+    # the re-enable is a one-line change once the OpenClaw CLI gains a
+    # `voice_call initiate` verb we can cron directly instead of routing
+    # through a spawned agent + prose payload.
+    #
+    # Until that lands: if a caller asks for a callback, the model will
+    # say it can't schedule one rather than firing a broken cron job.
     async def schedule_callback(
         self,
         delay: str,
