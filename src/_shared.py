@@ -60,6 +60,9 @@ class AoiAgent(
 ):
     """Aoi with all OpenClaw platform tools."""
 
+    # Memories stored during Aoi's calls are tagged as hers, not Nyla's.
+    memory_agent_tag = "aoi-voice"
+
     def __init__(
         self,
         *,
