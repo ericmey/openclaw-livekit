@@ -85,4 +85,8 @@ def test_reject_delegation_target_rejects_outside_allowlist():
     inst = _Restricted()
     assert inst._reject_delegation_target("yumi") is None
     rejection = inst._reject_delegation_target("hana")
-    assert rejection is not None and "hana" in rejection and "yumi" in rejection
+    assert rejection is not None
+    assert "hana" in rejection
+    # The rejection lists the allowed targets so the voice agent can
+    # surface the alternatives out loud.
+    assert "yumi" in rejection and "rin" in rejection

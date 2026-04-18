@@ -64,10 +64,10 @@ class SessionsToolsMixin(Agent):
         if allowed is None:
             return None
         if agent_id.lower() not in allowed:
-            allowed_list = ", ".join(sorted(allowed)) or "(no one)"
+            allowed_list = ", ".join(sorted(allowed)) or "no one"
             return (
-                f"I can't delegate to {agent_id} from this call — "
-                f"allowed targets for me are: {allowed_list}."
+                f"I don't route to {agent_id} from this call — my defaults "
+                f"are {allowed_list}. Want me to hand it off another way?"
             )
         return None
 
