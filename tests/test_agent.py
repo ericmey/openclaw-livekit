@@ -75,6 +75,15 @@ class TestAgentClass:
         attr = getattr(agent, "openclaw_request", None)
         assert not callable(attr), "openclaw_request was deleted in SDK cleanup"
 
+    def test_config_is_nyla_identity(self, agent_module):
+        """Nyla's config tags memories as nyla-voice and sets her name/room."""
+        cfg = agent_module.NylaAgent.config
+        assert cfg.agent_name == "nyla"
+        assert cfg.memory_agent_tag == "nyla-voice"
+        assert cfg.discord_room.startswith("channel:")
+        # Nyla is the household router — she may delegate to anyone.
+        assert cfg.allowed_delegation_targets is None
+
 
 class TestPersona:
     """Verify persona loading from prompts/system.md."""

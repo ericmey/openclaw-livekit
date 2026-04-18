@@ -15,6 +15,8 @@ from google.genai import types as genai_types
 from livekit.plugins import google as google_plugin
 from livekit.plugins.google.tools import GoogleSearch
 
+from openclaw_livekit_agent_sdk.config import AgentConfig
+from openclaw_livekit_agent_sdk.constants import NYLA_DISCORD_ROOM
 from openclaw_livekit_agent_sdk.env import load_env
 from openclaw_livekit_agent_sdk.tools.core import CoreToolsMixin
 from openclaw_livekit_agent_sdk.tools.memory import MemoryToolsMixin
@@ -48,6 +50,17 @@ def load_persona() -> str:
 
 
 # --- agent class -------------------------------------------------------
+
+#: Nyla's operational identity. Household router — no delegation
+#: restrictions, delegated work posts to her own Discord room.
+NYLA_CONFIG = AgentConfig(
+    agent_name="nyla",
+    memory_agent_tag="nyla-voice",
+    discord_room=NYLA_DISCORD_ROOM,
+    allowed_delegation_targets=None,
+)
+
+
 class NylaAgent(
     CoreToolsMixin,
     MemoryToolsMixin,
@@ -56,6 +69,8 @@ class NylaAgent(
     Agent,
 ):
     """Nyla with all OpenClaw platform tools."""
+
+    config = NYLA_CONFIG
 
     def __init__(
         self,
