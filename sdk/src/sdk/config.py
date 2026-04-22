@@ -36,12 +36,27 @@ class AgentConfig:
             router behavior — Nyla's default). A frozenset means any
             ``agent_id`` outside the set is rejected with an error
             message rather than firing.
+        musubi_v2_namespace: Namespace used by the new-stack Musubi tools
+            (``musubi_recall`` / ``musubi_remember`` / ``musubi_think``)
+            in `tools/musubi_voice.py`. Alpha Musubi writes into the
+            ``musubi_memories`` Qdrant collection by convention; the new
+            canonical API expects ``<owner>/<scope>`` namespaces (e.g.
+            ``eric/aoi-voice/episodic``). ``None`` means the new-stack
+            mixin is not meaningfully configured for this agent —
+            voice tools using it will degrade gracefully. Left ``None``
+            on every existing agent so the migration is deliberate.
+        musubi_v2_presence: Presence identifier used as
+            ``from_presence`` for `musubi_think` thought sends. Shape:
+            ``<owner>/<agent>`` (e.g. ``eric/aoi``). Defaults to
+            ``eric/<agent_name>`` at call time when ``None``.
     """
 
     agent_name: str
     memory_agent_tag: str
     discord_room: str
     allowed_delegation_targets: frozenset[str] | None = None
+    musubi_v2_namespace: str | None = None
+    musubi_v2_presence: str | None = None
 
 
 # Default config preserves the pre-AgentConfig behavior: tag everything

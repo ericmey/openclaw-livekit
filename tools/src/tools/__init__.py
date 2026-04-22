@@ -13,11 +13,13 @@ via MRO walk. Agents compose the mixins they need::
 from .academy import AcademyToolsMixin
 from .core import CoreToolsMixin
 from .memory import MemoryToolsMixin
+from .musubi_voice import MusubiVoiceToolsMixin
 from .sessions import SessionsToolsMixin
 
 __all__ = [
     "AcademyToolsMixin",
     "CoreToolsMixin",
     "MemoryToolsMixin",
+    "MusubiVoiceToolsMixin",
     "SessionsToolsMixin",
 ]
