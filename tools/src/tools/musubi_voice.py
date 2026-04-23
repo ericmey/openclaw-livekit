@@ -85,6 +85,52 @@ class MusubiVoiceToolsMixin(Agent):
             return self.config.musubi_v2_presence
         return f"eric/{self.config.agent_name}"
 
+    def _ns(self, plane: str) -> str | None:
+        """Derive a 3-segment canonical namespace from the 2-segment
+        config prefix. Returns ``None`` when the prefix isn't
+        configured (the mixin degrades) or when the prefix is already
+        3-segment (back-compat: trust the caller)."""
+        prefix = self.config.musubi_v2_namespace
+        if not prefix:
+            return None
+        segments = prefix.split("/")
+        if len(segments) == 3:
+            # Back-compat with any deployment that still has an
+            # explicit 3-segment value: swap the trailing plane.
+            return f"{segments[0]}/{segments[1]}/{plane}"
+        if len(segments) == 2:
+            return f"{prefix}/{plane}"
+        # Anything else (1 or 4+ segments) is malformed. Fail closed
+        # so the agent reports degraded rather than blasting the server.
+        logger.warning(
+            "musubi_v2_namespace %r is not 2-segment tenant/presence; voice tool will degrade",
+            prefix,
+        )
+        return None
+
+    def _read_namespaces(self) -> list[tuple[str, str]]:
+        """Resolve the (namespace, plane) targets a recall should
+        fan out across. Canonical retrieve requires a 3-segment
+        namespace and the stored-row filter is literal, so a single
+        call can only surface hits from one plane. Fan out across
+        episodic + shared curated + shared concept.
+
+        Returns an empty list when the config prefix isn't available.
+        """
+        prefix = self.config.musubi_v2_namespace
+        if not prefix:
+            return []
+        segments = prefix.split("/")
+        if len(segments) < 2:
+            return []
+        owner = segments[0]
+        two_seg = "/".join(segments[:2])
+        return [
+            (f"{two_seg}/episodic", "episodic"),
+            (f"{owner}/_shared/curated", "curated"),
+            (f"{owner}/_shared/concept", "concept"),
+        ]
+
     async def recall_impl(self, query: str, limit: int = 5) -> str:
         """Plain-async body of ``musubi_recall``. Extracted so tests
         can target the helper directly without going through the
@@ -92,38 +138,84 @@ class MusubiVoiceToolsMixin(Agent):
         unwrap). Matches the separation ``fetch_recent_context`` /
         ``musubi_recent`` uses in ``memory.py``."""
         trace(f"tool=musubi_recall query={query[:60]!r} limit={limit}")
-        namespace = self.config.musubi_v2_namespace
-        if not namespace:
+        targets = self._read_namespaces()
+        if not targets:
             logger.debug("musubi_recall: no v2 namespace configured; degrading")
             return _DEGRADED_MESSAGE
         if not query.strip():
             return "Error: query is required."
 
         capped = max(1, min(limit, _MAX_RECALL_RESULTS))
-        try:
-            resp = await self._musubi_v2_client().retrieve(
-                namespace=namespace,
-                query_text=query,
-                mode="deep",
-                limit=capped,
-            )
-        except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
-            logger.warning("musubi_recall: transient %s", err)
-            return _DEGRADED_MESSAGE
-        except MusubiV2AuthError as err:
-            logger.error("musubi_recall: auth failure: %s", err)
-            return _DEGRADED_MESSAGE
-        except MusubiV2ClientError as err:
-            logger.error("musubi_recall: bad request: %s", err)
-            return _DEGRADED_MESSAGE
-        except MusubiV2Error as err:
-            logger.warning("musubi_recall: %s", err)
+        client = self._musubi_v2_client()
+
+        # Canonical retrieve scopes to one namespace per call (see
+        # Musubi #209). Fan out across episodic + shared curated +
+        # shared concept, merge by object_id, keep the top N by
+        # score. `asyncio.gather` with `return_exceptions=True` so a
+        # single plane failing doesn't blank the whole recall.
+        import asyncio
+
+        coros = [
+            client.retrieve(namespace=ns, query_text=query, mode="deep", limit=capped)
+            for ns, _plane in targets
+        ]
+        settled = await asyncio.gather(*coros, return_exceptions=True)
+
+        successes: list[dict[str, Any]] = []
+        transient = False
+        for result in settled:
+            if isinstance(result, (MusubiV2TimeoutError, MusubiV2ServerError)):
+                logger.warning("musubi_recall: transient %s", result)
+                transient = True
+                continue
+            if isinstance(result, MusubiV2AuthError):
+                # A plane-scoped auth failure is NOT a whole-recall
+                # failure — a voice token may have scope on
+                # episodic + curated but not concept, and the user
+                # still deserves the hits we can fetch. Log the
+                # plane failure, continue, and only fall back to
+                # degraded if ALL planes failed.
+                logger.warning("musubi_recall: per-plane auth denied: %s", result)
+                continue
+            if isinstance(result, MusubiV2ClientError):
+                logger.error("musubi_recall: bad request: %s", result)
+                continue
+            if isinstance(result, MusubiV2Error):
+                logger.warning("musubi_recall: %s", result)
+                continue
+            if isinstance(result, BaseException):
+                logger.warning("musubi_recall: unexpected %r", result)
+                continue
+            if isinstance(result, dict):
+                successes.append(result)
+
+        if not successes:
+            # Every plane either erred or auth-denied — we have
+            # nothing to return. Surface the degraded message so
+            # the voice model doesn't claim "no memories" when the
+            # system couldn't look.
+            if transient:
+                return _DEGRADED_MESSAGE
             return _DEGRADED_MESSAGE
 
-        rows = resp.get("results") or []
-        if not rows:
+        seen: set[str] = set()
+        merged: list[dict[str, Any]] = []
+        for resp in successes:
+            for row in resp.get("results") or []:
+                oid = row.get("object_id")
+                # Dedup rows with a stable id; rows without one
+                # (synthetic responses, legacy fixtures) fall through
+                # to the merge list as-is.
+                if isinstance(oid, str):
+                    if oid in seen:
+                        continue
+                    seen.add(oid)
+                merged.append(row)
+
+        merged.sort(key=lambda r: r.get("score", 0.0), reverse=True)
+        if not merged:
             return "No matching memories found."
-        return _format_recall(rows)
+        return _format_recall(merged[:capped])
 
     @function_tool
     async def musubi_recall(self, query: str, limit: int = 5) -> str:
@@ -153,7 +245,7 @@ class MusubiVoiceToolsMixin(Agent):
     ) -> str:
         """Plain-async body of ``musubi_remember``."""
         trace(f"tool=musubi_remember content={content[:60]!r} tags={tags!r}")
-        namespace = self.config.musubi_v2_namespace
+        namespace = self._ns("episodic")
         if not namespace:
             logger.debug("musubi_remember: no v2 namespace configured; degrading")
             return _DEGRADED_MESSAGE
@@ -224,7 +316,7 @@ class MusubiVoiceToolsMixin(Agent):
     ) -> str:
         """Plain-async body of ``musubi_think``."""
         trace(f"tool=musubi_think to={to_agent!r} content={content[:60]!r} channel={channel!r}")
-        namespace = self.config.musubi_v2_namespace
+        namespace = self._ns("thought")
         if not namespace:
             logger.debug("musubi_think: no v2 namespace configured; degrading")
             return _DEGRADED_MESSAGE

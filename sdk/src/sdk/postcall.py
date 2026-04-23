@@ -259,7 +259,7 @@ def build_review_task(
             "",
             "Complete ALL of these post-review actions. Do not skip any.",
             "",
-            f'1. **Manifest update** — Append `{{"{call_sid}": "review_complete": true}}` to `{manifest_path}`',
+            f'1. **Manifest update** — Append `{{"call_sid": "{call_sid}", "review_complete": true}}` to `{manifest_path}` (one JSON object per line — must be valid JSON)',
             "",
             "2. **Working files** — Update the appropriate files in your voice-ops workspace:",
             "   - **Any issue with severity high or critical** → append a row to `incident_log.md`",

@@ -105,7 +105,6 @@ async def capture_memory(
     namespace: str,
     content: str,
     tags: list[str] | None = None,
-    topics: list[str] | None = None,
     importance: int = 5,
     idempotency_key: str | None = None,
     session: aiohttp.ClientSession | None = None,
@@ -115,12 +114,18 @@ async def capture_memory(
     Returns the ack dict (includes `object_id` + lifecycle state). The
     caller owns `idempotency_key`; absent one, we generate a fresh UUID
     so a retried tool call doesn't double-post.
+
+    Canonical `CaptureRequest` accepts `{namespace, content, summary?,
+    tags, importance, created_at?}` — anything else is dropped
+    server-side by pydantic `extra="ignore"`. This client used to
+    also send `topics`; drop it here rather than silently lose data.
+    Callers that want both should fold topics into `tags` at the call
+    site.
     """
     body: dict[str, Any] = {
         "namespace": namespace,
         "content": content,
         "tags": tags or [],
-        "topics": topics or [],
         "importance": importance,
     }
     return await _post(
@@ -271,7 +276,6 @@ class MusubiV2Client:
         namespace: str,
         content: str,
         tags: list[str] | None = None,
-        topics: list[str] | None = None,
         importance: int = 5,
         idempotency_key: str | None = None,
         session: aiohttp.ClientSession | None = None,
@@ -281,7 +285,6 @@ class MusubiV2Client:
             namespace=namespace,
             content=content,
             tags=tags,
-            topics=topics,
             importance=importance,
             idempotency_key=idempotency_key,
             session=session,

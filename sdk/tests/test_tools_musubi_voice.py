@@ -111,7 +111,7 @@ class _FakeV2Client:
 
 def _make_instance(
     fake: _FakeV2Client,
-    namespace: str | None = "eric/test-voice/episodic",
+    namespace: str | None = "eric/test-voice",
     presence: str | None = "eric/aoi",
     agent_name: str = "aoi",
 ) -> MusubiVoiceToolsMixin:
@@ -156,7 +156,17 @@ def test_recall_returns_no_match_on_empty_results() -> None:
     inst = _make_instance(fake)
     out = _run(inst.recall_impl("anything"))
     assert out == "No matching memories found."
-    assert len(fake.retrieves) == 1
+    # Canonical retrieve is one-call-per-plane (see Musubi #209).
+    # Voice recall fans out over episodic + shared curated + shared
+    # concept — expect three calls, each scoped to a 3-segment
+    # namespace.
+    assert len(fake.retrieves) == 3
+    namespaces = sorted(r["namespace"] for r in fake.retrieves)
+    assert namespaces == [
+        "eric/_shared/concept",
+        "eric/_shared/curated",
+        "eric/test-voice/episodic",
+    ]
 
 
 def test_recall_formats_rows_with_plane_prefix() -> None:
