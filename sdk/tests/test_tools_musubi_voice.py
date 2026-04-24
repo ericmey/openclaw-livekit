@@ -143,6 +143,23 @@ def test_recall_degrades_when_namespace_is_none() -> None:
     assert fake.retrieves == []
 
 
+def test_recall_degrades_on_malformed_namespace() -> None:
+    """_read_namespaces() must fail closed on 1- or 4+-segment prefixes,
+    matching _ns() degradation behavior so recall/remember/think are
+    consistent."""
+    fake = _FakeV2Client()
+    # 1 segment — too short
+    inst = _make_instance(fake, namespace="eric")
+    out = _run(inst.recall_impl("anything"))
+    assert "Couldn't reach memory" in out
+    assert fake.retrieves == []
+    # 4 segments — too long (should not silently truncate)
+    inst = _make_instance(fake, namespace="eric/aoi/voice/extra")
+    out = _run(inst.recall_impl("anything"))
+    assert "Couldn't reach memory" in out
+    assert fake.retrieves == []
+
+
 def test_recall_rejects_empty_query() -> None:
     fake = _FakeV2Client(retrieve_returns={"results": []})
     inst = _make_instance(fake)

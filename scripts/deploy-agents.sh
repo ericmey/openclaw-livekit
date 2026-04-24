@@ -15,6 +15,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="${REPO_ROOT}/config/launchd/ai.openclaw.livekit-agent.plist.template"
 SECRETS="${OPENCLAW_SECRETS:-${REPO_ROOT}/secrets/livekit-agents.env}"
 VOICE_LOGS="${LIVEKIT_VOICE_LOGS:-${REPO_ROOT}/logs/voice}"
+OPENCLAW_BIN="${OPENCLAW_BIN:-/opt/homebrew/bin/openclaw}"
 LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 
 log()  { printf "\033[1;34m[deploy]\033[0m %s\n" "$*"; }
@@ -94,6 +95,7 @@ render_plist() {
     -e "s|{{GOOGLE_API_KEY}}|${GOOGLE_API_KEY}|g" \
     -e "s|{{GATEWAY_AUTH_TOKEN}}|${GATEWAY_AUTH_TOKEN}|g" \
     -e "s|{{DISCORD_BOT_TOKEN}}|${discord_token}|g" \
+    -e "s|{{OPENCLAW_BIN}}|${OPENCLAW_BIN}|g" \
     "${TEMPLATE}" > "${out}"
 
   log "rendered ${out}"

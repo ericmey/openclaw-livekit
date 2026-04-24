@@ -192,12 +192,7 @@ async def entrypoint(ctx: JobContext) -> None:
     wire_telemetry_capture(session, transcript_sid, agent_name="phone-party")
     wire_postcall_review(session, transcript_sid, agent_name="phone-party")
 
-    # Party uses session.say() for the greeting because the chained
-    # text-LLM pipeline (Gemini text + Whisper STT + ElevenLabs TTS)
-    # doesn't support generate_reply() at session start without a
-    # preceding user turn. The on_enter prefetch still runs above.
-    await session.say("Hey Eric, what's up?")
-    trace("party: sent greeting via session.say()")
+    trace("party: entrypoint complete, greeting delivered via on_enter")
 
 
 if __name__ == "__main__":

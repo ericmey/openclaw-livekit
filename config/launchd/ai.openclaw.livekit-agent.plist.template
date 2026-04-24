@@ -52,10 +52,11 @@
       <string>/opt/homebrew/bin:/opt/homebrew/opt/node/bin:/usr/local/bin:/usr/bin:/bin</string>
       <key>LIVEKIT_VOICE_LOGS</key>
       <string>{{LIVEKIT_VOICE_LOGS}}</string>
-      <!-- OPENCLAW_BIN: default is ARM Mac Homebrew. Intel Macs use
-           /usr/local/bin/openclaw. Override via env before deploy if needed. -->
+      <!-- OPENCLAW_BIN: rendered from env at deploy time. Falls back to
+           /opt/homebrew/bin/openclaw (ARM Homebrew default). Intel Macs
+           or custom install paths should set OPENCLAW_BIN before deploy. -->
       <key>OPENCLAW_BIN</key>
-      <string>/opt/homebrew/bin/openclaw</string>
+      <string>{{OPENCLAW_BIN}}</string>
       <key>LIVEKIT_URL</key>
       <string>{{LIVEKIT_URL}}</string>
       <key>LIVEKIT_API_KEY</key>
