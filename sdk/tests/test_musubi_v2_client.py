@@ -135,8 +135,7 @@ async def test_capture_memory_posts_expected_shape() -> None:
         _cfg(),
         namespace="eric/test/episodic",
         content="remember this",
-        tags=["livekit"],
-        topics=["demo"],
+        tags=["livekit", "demo"],
         importance=7,
         idempotency_key="fixed-key",
         session=session,  # type: ignore[arg-type]
@@ -145,11 +144,14 @@ async def test_capture_memory_posts_expected_shape() -> None:
     assert len(session.calls) == 1
     call = session.calls[0]
     assert call["url"] == "http://musubi.test/v1/memories"
+    # Canonical `CaptureRequest` accepts namespace/content/tags/
+    # importance (+ optional summary/created_at). `topics` used to
+    # be sent and silently dropped server-side; callers now fold
+    # topics into `tags` at the call site.
     assert call["json"] == {
         "namespace": "eric/test/episodic",
         "content": "remember this",
-        "tags": ["livekit"],
-        "topics": ["demo"],
+        "tags": ["livekit", "demo"],
         "importance": 7,
     }
     # Bearer + request-id + idempotency.
