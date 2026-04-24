@@ -69,8 +69,9 @@ async def entrypoint_text(ctx: JobContext) -> None:
     wire_transcript_logging(session, transcript_sid)
     wire_telemetry_capture(session, transcript_sid, agent_name="phone-nyla-text")
     # Only spawn post-call review for real voice calls (call_sid set by SIP).
-    # Text simulator sessions use synthetic SIM-* room names and should not
-    # pollute the voice-ops manifest / spawn Rin reviews.
+    # Text simulator sessions use synthetic `sim-*` room names (for example,
+    # `sim-test-*`) and do not have a SIP participant, so `call_sid` is None.
+    # They should not pollute the voice-ops manifest / spawn Rin reviews.
     if call_sid:
         wire_postcall_review(session, call_sid, agent_name="phone-nyla-text")
 
