@@ -11,6 +11,13 @@ via MRO walk. Agents compose the mixins they need::
 """
 
 from .academy import AcademyToolsMixin
+from .base_agent import (
+    BaseRealtimeAgent,
+    build_common_tools,
+    build_realtime_model,
+    load_env_once,
+    load_persona,
+)
 from .core import CoreToolsMixin
 from .memory import MemoryToolsMixin
 from .musubi_voice import MusubiVoiceToolsMixin
@@ -18,8 +25,13 @@ from .sessions import SessionsToolsMixin
 
 __all__ = [
     "AcademyToolsMixin",
+    "BaseRealtimeAgent",
     "CoreToolsMixin",
     "MemoryToolsMixin",
     "MusubiVoiceToolsMixin",
     "SessionsToolsMixin",
+    "build_common_tools",
+    "build_realtime_model",
+    "load_env_once",
+    "load_persona",
 ]

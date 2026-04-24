@@ -137,29 +137,45 @@ class TestSDKImports:
     """Verify SDK dependencies import cleanly."""
 
     def test_import_core_tools(self):
-        pass
+        from tools.core import CoreToolsMixin
+
+        assert CoreToolsMixin is not None
 
     def test_import_memory_tools(self):
-        pass
+        from tools.memory import MemoryToolsMixin
+
+        assert MemoryToolsMixin is not None
 
     def test_import_sessions_tools(self):
-        pass
+        from tools.sessions import SessionsToolsMixin
+
+        assert SessionsToolsMixin is not None
 
     def test_import_academy_tools(self):
-        pass
+        from tools.academy import AcademyToolsMixin
+
+        assert AcademyToolsMixin is not None
 
 
 class TestProviderImports:
     """Verify Gemini provider imports for this agent."""
 
     def test_import_google_plugin(self):
-        pass
+        from livekit.plugins import google as google_plugin
+
+        assert google_plugin is not None
 
     def test_import_google_search(self):
-        pass
+        from livekit.plugins.google.tools import GoogleSearch
+
+        assert GoogleSearch is not None
 
     def test_import_gemini_types(self):
-        pass
+        from google.genai import types as genai_types
+
+        assert genai_types is not None
 
     def test_import_end_call_tool(self):
-        pass
+        from livekit.agents.beta import EndCallTool
+
+        assert EndCallTool is not None

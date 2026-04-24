@@ -16,10 +16,13 @@ def test_discord_channels_are_numeric_strings():
     assert ERIC_DISCORD_DM.startswith("user:")
 
 
-def test_sanitize_strips_shell_chars():
-    assert sanitize('hello "world"') == "hello world"
-    assert sanitize("safe text") == "safe text"
-    assert sanitize("rm -rf /; echo bad") == "rm -rf / echo bad"
+def test_sanitize_uses_shlex_quote():
+    # shlex.quote wraps strings containing shell metacharacters
+    assert sanitize('hello "world"') == "'hello \"world\"'"
+    # Simple strings without shell-meaningful characters pass through unchanged
+    assert sanitize("safetext") == "safetext"
+    # Malicious input is safely quoted, not stripped
+    assert sanitize("rm -rf /; echo bad") == "'rm -rf /; echo bad'"
 
 
 def test_delay_regex_accepts_valid():

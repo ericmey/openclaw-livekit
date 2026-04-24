@@ -28,7 +28,8 @@ def _ensure_transcript_dir() -> Path | None:
         return None
     try:
         d.mkdir(parents=True, exist_ok=True)
-    except Exception:
+    except Exception as exc:
+        logger.error("transcript dir creation failed: %s", exc)
         return None
     return d
 
@@ -50,8 +51,8 @@ def _write_transcript_line(call_sid: str | None, role: str, text: str) -> None:
             path = d / f"{call_sid}.txt"
             with path.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("transcript line write failed: %s", exc)
 
 
 def wire_transcript_logging(
@@ -72,8 +73,8 @@ def wire_transcript_logging(
                 f.write(
                     f"=== Call {call_sid} started at {time.strftime('%Y-%m-%dT%H:%M:%S')} ===\n"
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("transcript header write failed: %s", exc)
 
     @session.on("conversation_item_added")
     def _on_conversation_item(ev: Any) -> None:

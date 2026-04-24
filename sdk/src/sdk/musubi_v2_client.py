@@ -239,24 +239,6 @@ async def _post(
         return await _do(http)
 
 
-__all__ = [
-    "DEFAULT_BASE_URL",
-    "MUSUBI_V2_BASE_URL_ENV",
-    "MUSUBI_V2_TIMEOUT_S",
-    "MUSUBI_V2_TOKEN_ENV",
-    "MusubiV2AuthError",
-    "MusubiV2Client",
-    "MusubiV2ClientConfig",
-    "MusubiV2ClientError",
-    "MusubiV2Error",
-    "MusubiV2ServerError",
-    "MusubiV2TimeoutError",
-    "capture_memory",
-    "retrieve",
-    "send_thought",
-]
-
-
 @dataclass(frozen=True)
 class MusubiV2Client:
     """Small convenience facade — binds a config + optional shared
@@ -329,3 +311,21 @@ class MusubiV2Client:
             importance=importance,
             session=session,
         )
+
+
+__all__ = [
+    "DEFAULT_BASE_URL",
+    "MUSUBI_V2_BASE_URL_ENV",
+    "MUSUBI_V2_TIMEOUT_S",
+    "MUSUBI_V2_TOKEN_ENV",
+    "MusubiV2AuthError",
+    "MusubiV2Client",
+    "MusubiV2ClientConfig",
+    "MusubiV2ClientError",
+    "MusubiV2Error",
+    "MusubiV2ServerError",
+    "MusubiV2TimeoutError",
+    "capture_memory",
+    "retrieve",
+    "send_thought",
+]

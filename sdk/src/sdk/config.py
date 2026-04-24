@@ -64,8 +64,12 @@ class AgentConfig:
 
 # Default config preserves the pre-AgentConfig behavior: tag everything
 # as Nyla-voice, deliver room-targeted work to Nyla's channel, no
-# delegation restrictions. Any mixin instance that somehow doesn't get
-# a concrete config falls back to this.
+# delegation restrictions.
+#
+# WARNING: this is the class-level fallback on every mixin. If a new
+# agent forgets to set its own ``config``, it will silently pollute
+# Nyla's memory bucket and Discord room. Always set ``config`` on
+# concrete agent subclasses.
 NYLA_DEFAULT_CONFIG = AgentConfig(
     agent_name="nyla",
     memory_agent_tag="nyla-voice",

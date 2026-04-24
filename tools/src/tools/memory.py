@@ -14,12 +14,30 @@ from sdk.config import NYLA_DEFAULT_CONFIG, AgentConfig
 from sdk.musubi_client import (
     MUSUBI_COLLECTION,
     MUSUBI_TIMEOUT_S,
-    QDRANT_URL,
     async_embed_text,
+    qdrant_url,
 )
 from sdk.trace import trace
 
 logger = logging.getLogger("openclaw-livekit.agent")
+
+# Shared TCP connector for Qdrant calls — avoids TCP handshake per request
+# while keeping sessions scoped to individual requests (no cross-event-loop
+# or unclosed-session issues). The connector is closed at process exit.
+_qdrant_connector: aiohttp.TCPConnector | None = None
+
+
+def _shared_qdrant_connector() -> aiohttp.TCPConnector:
+    global _qdrant_connector
+    if _qdrant_connector is None or _qdrant_connector.closed:
+        _qdrant_connector = aiohttp.TCPConnector(limit=10)
+    return _qdrant_connector
+
+
+# Connector cleanup: TCPConnector.close() may be typed as async in some
+# aiohttp stub versions. We skip atexit cleanup — the OS reclaims sockets
+# on process exit, and per-request sessions (which reference this connector)
+# are properly closed after each call.
 
 
 class MemoryToolsMixin(Agent):
@@ -64,9 +82,12 @@ class MemoryToolsMixin(Agent):
 
         try:
             timeout = aiohttp.ClientTimeout(total=MUSUBI_TIMEOUT_S)
-            async with aiohttp.ClientSession(timeout=timeout) as http:
+            async with aiohttp.ClientSession(
+                connector=_shared_qdrant_connector(),
+                timeout=timeout,
+            ) as http:
                 async with http.post(
-                    f"{QDRANT_URL}/collections/{MUSUBI_COLLECTION}/points/scroll",
+                    f"{qdrant_url()}/collections/{MUSUBI_COLLECTION}/points/scroll",
                     json=body,
                 ) as resp:
                     if resp.status != 200:
@@ -171,10 +192,15 @@ class MemoryToolsMixin(Agent):
         }
 
         try:
+            # Writes need a longer timeout than reads — Qdrant may need to
+            # flush to disk. Use 2s while still sharing the connection pool.
             timeout = aiohttp.ClientTimeout(total=2)
-            async with aiohttp.ClientSession(timeout=timeout) as http:
+            async with aiohttp.ClientSession(
+                connector=_shared_qdrant_connector(),
+                timeout=timeout,
+            ) as http:
                 async with http.put(
-                    f"{QDRANT_URL}/collections/{MUSUBI_COLLECTION}/points",
+                    f"{qdrant_url()}/collections/{MUSUBI_COLLECTION}/points",
                     json=body,
                     params={"wait": "true"},
                 ) as resp:

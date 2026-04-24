@@ -13,6 +13,7 @@ from _shared import NylaAgent, build_model, build_tools, load_env_once, load_per
 from livekit.agents import AgentSession, JobContext, cli
 from livekit.agents.voice.room_io import RoomOptions
 from livekit.agents.worker import AgentServer
+from sdk.postcall import wire_postcall_review
 from sdk.telemetry import wire_telemetry_capture
 from sdk.telephony import resolve_caller
 from sdk.trace import trace
@@ -64,9 +65,10 @@ async def entrypoint_text(ctx: JobContext) -> None:
 
     transcript_sid = call_sid
     if not transcript_sid and ctx.room.name.startswith("sim-"):
-        transcript_sid = ctx.room.name[len("sim-") :]
+        transcript_sid = ctx.room.name.removeprefix("sim-")
     wire_transcript_logging(session, transcript_sid)
     wire_telemetry_capture(session, transcript_sid, agent_name="phone-nyla-text")
+    wire_postcall_review(session, transcript_sid, agent_name="phone-nyla-text")
 
     trace(f"text session started room={ctx.room.name}")
 

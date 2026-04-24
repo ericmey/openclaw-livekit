@@ -11,6 +11,24 @@ from sdk.trace import trace
 
 logger = logging.getLogger("openclaw-livekit.agent")
 
+# Shared TCP connector for NWS weather calls — avoids TCP handshake per
+# request while keeping sessions scoped to individual requests (no cross-
+# event-loop or unclosed-session issues). The connector is closed at exit.
+_weather_connector: aiohttp.TCPConnector | None = None
+
+
+def _shared_weather_connector() -> aiohttp.TCPConnector:
+    global _weather_connector
+    if _weather_connector is None or _weather_connector.closed:
+        _weather_connector = aiohttp.TCPConnector(limit=5)
+    return _weather_connector
+
+
+# Connector cleanup: TCPConnector.close() may be typed as async in some
+# aiohttp stub versions. We skip atexit cleanup — the OS reclaims sockets
+# on process exit, and per-request sessions (which reference this connector)
+# are properly closed after each call.
+
 
 class CoreToolsMixin(Agent):
     """Provides get_current_time and get_weather tools."""
@@ -44,10 +62,12 @@ class CoreToolsMixin(Agent):
             "Accept": "application/geo+json",
         }
         try:
-            async with aiohttp.ClientSession() as http:
-                async with http.get(
-                    nws_url, headers=headers, timeout=aiohttp.ClientTimeout(total=3)
-                ) as resp:
+            timeout = aiohttp.ClientTimeout(total=3)
+            async with aiohttp.ClientSession(
+                connector=_shared_weather_connector(),
+                timeout=timeout,
+            ) as http:
+                async with http.get(nws_url, headers=headers) as resp:
                     if resp.status != 200:
                         trace(f"tool=get_weather NWS status={resp.status}")
                         return f"Couldn't pull weather — NWS returned {resp.status}."

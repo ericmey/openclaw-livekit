@@ -7,26 +7,30 @@ EXPECTED_TOOLS = [
     "memory_store",
     "sessions_send",
     "sessions_spawn",
-    "schedule_callback",
     "academy_selfie",
     "academy_send",
 ]
 
+# schedule_callback is deliberately disabled — the @function_tool decorator
+# is removed so the voice model can't discover it. The method body is
+# preserved for guardrail tests. See SDK/TODO.md for the re-enable plan.
+DISABLED_TOOLS = ["schedule_callback"]
 
-def test_all_nine_tools_present(agent):
-    """A fully composed agent has all 9 expected tools."""
+
+def test_all_active_tools_present(agent):
+    """A fully composed agent has all 8 active expected tools."""
     for tool_name in EXPECTED_TOOLS:
         assert hasattr(agent, tool_name), f"Missing tool: {tool_name}"
 
 
-def test_exactly_nine_tools(agent):
-    """No extra unexpected tools on the composed agent."""
+def test_exactly_eight_active_tools(agent):
+    """No extra unexpected active tools on the composed agent."""
     found = []
     for name in EXPECTED_TOOLS:
         attr = getattr(agent, name, None)
         if attr is not None and callable(attr):
             found.append(name)
-    assert len(found) == 9, f"Expected 9 tools, found {len(found)}: {found}"
+    assert len(found) == 8, f"Expected 8 tools, found {len(found)}: {found}"
 
 
 def test_openclaw_request_absent(agent):

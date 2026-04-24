@@ -61,10 +61,10 @@ truncate-logs: ## Zero out all agent logs (clean baseline for testing)
 
 # ---- tests ---------------------------------------------------------
 
-test: ## Run pytest across all workspace members (sdk + three agents)
-	@for d in sdk agents/nyla agents/aoi agents/party; do \
+test: ## Run pytest across all workspace members (sdk + tools + three agents)
+	@for d in sdk tools agents/nyla agents/aoi agents/party; do \
 	  echo ">> $$d"; \
-	  (cd $$d && uv run pytest -q) || exit 1; \
+	  (cd $$d && uv run pytest -q) || { code=$$?; [[ $$code == 5 ]] && echo "  (no tests)" || exit $$code; }; \
 	done
 
 # ---- static checks (pre-release gate) ------------------------------
