@@ -55,7 +55,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     transcript_sid = call_sid
     if not transcript_sid and ctx.room.name.startswith("phone-"):
-        transcript_sid = ctx.room.name[len("phone-") :]
+        transcript_sid = ctx.room.name.removeprefix("phone-")
     wire_transcript_logging(session, transcript_sid)
     wire_telemetry_capture(session, transcript_sid, agent_name="phone-nyla")
     wire_postcall_review(session, transcript_sid, agent_name="phone-nyla")

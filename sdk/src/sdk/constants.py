@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from zoneinfo import ZoneInfo
 
 # Mizuki's Discord channel — shared by academy_send and academy_selfie
@@ -15,9 +16,9 @@ MIZUKI_DISCORD_CHANNEL = "1486181468311916674"
 NYLA_DISCORD_ROOM = "channel:1480975791977140285"
 ERIC_DISCORD_DM = "user:527362260486586368"
 
-# schedule_callback sanitizer — strip shell-meaningful characters from
-# caller-supplied text before embedding it in a scheduled command.
-SANITIZE_RE = re.compile(r"[\"`$\\!;|&<>(){}[\]\n\r]")
+# schedule_callback sanitizer — use shlex.quote for robust shell-escaping
+# rather than an incomplete regex that can miss unicode homoglyphs and
+# control characters.
 DELAY_RE = re.compile(r"^\d+[mhd]$")
 E164_RE = re.compile(r"^\+[1-9]\d{1,14}$")
 
@@ -38,8 +39,14 @@ CALLBACK_QUIET_END_HOUR = 7  # exclusive
 
 
 def sanitize(text: str) -> str:
-    """Strip shell-meaningful characters."""
-    return SANITIZE_RE.sub("", text).strip()
+    """Shell-safe a caller-supplied string using stdlib shlex.quote.
+
+    Wraps the text so a shell will treat it as a single literal argument,
+    preventing injection of spaces, quotes, backslashes, and other
+    metacharacters. This is more reliable than a blocklist regex because
+    it does not need to enumerate every possible shell-meaningful character.
+    """
+    return shlex.quote(text or "")
 
 
 def parse_delay_seconds(delay: str) -> int:

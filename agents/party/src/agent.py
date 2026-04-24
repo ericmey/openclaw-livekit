@@ -30,6 +30,8 @@ from livekit.plugins import silero as silero_plugin
 from sdk.config import AgentConfig
 from sdk.constants import NYLA_DISCORD_ROOM
 from sdk.env import load_env
+from sdk.postcall import wire_postcall_review
+from sdk.telemetry import wire_telemetry_capture
 from sdk.telephony import resolve_caller
 from sdk.trace import trace
 from sdk.transcript import wire_transcript_logging
@@ -101,6 +103,32 @@ class PartyAgent(
         super().__init__(instructions=instructions, tools=extra_tools or None)
         self._caller_from: str | None = caller_from
 
+    async def on_enter(self) -> None:
+        # Prefetch recent household context deterministically — same
+        # reasoning as Nyla/Aoi: the prompt asks for musubi_recent first,
+        # but the model skips it often enough to be unreliable.
+        #
+        # NOTE: Party uses the chained text-LLM pipeline (Gemini text +
+        # Whisper STT + ElevenLabs TTS). generate_reply() is not supported
+        # at session start without a preceding user turn, so we build a
+        # greeting string and use session.say() instead.
+        try:
+            context = await self.fetch_recent_context(hours=24, limit=10)
+        except Exception as err:
+            logger.warning("on_enter: startup context fetch failed: %s", err)
+            context = ""
+
+        if context and context not in {
+            "No recent memories found.",
+            "Couldn't check memory — Qdrant didn't respond in time.",
+        }:
+            recent_line = context.strip().splitlines()[0].strip()
+            greeting = f"Hey Eric, good to hear from you — I was just thinking about {recent_line}."
+        else:
+            greeting = "Hey Eric, good to hear from you."
+
+        await self.session.say(greeting)
+
 
 # --- server + session --------------------------------------------------
 server = AgentServer(port=8083)
@@ -159,11 +187,17 @@ async def entrypoint(ctx: JobContext) -> None:
 
     transcript_sid = call_sid
     if not transcript_sid and ctx.room.name.startswith("phone-"):
-        transcript_sid = ctx.room.name[len("phone-") :]
+        transcript_sid = ctx.room.name.removeprefix("phone-")
     wire_transcript_logging(session, transcript_sid)
+    wire_telemetry_capture(session, transcript_sid, agent_name="phone-party")
+    wire_postcall_review(session, transcript_sid, agent_name="phone-party")
 
+    # Party uses session.say() for the greeting because the chained
+    # text-LLM pipeline (Gemini text + Whisper STT + ElevenLabs TTS)
+    # doesn't support generate_reply() at session start without a
+    # preceding user turn. The on_enter prefetch still runs above.
     await session.say("Hey Eric, what's up?")
-    trace("party: sent canned greeting via session.say()")
+    trace("party: sent greeting via session.say()")
 
 
 if __name__ == "__main__":

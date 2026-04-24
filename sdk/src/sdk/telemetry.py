@@ -41,7 +41,8 @@ def _ensure_telemetry_dir() -> Path | None:
         return None
     try:
         d.mkdir(parents=True, exist_ok=True)
-    except Exception:
+    except Exception as exc:
+        logger.error("telemetry dir creation failed: %s", exc)
         return None
     return d
 

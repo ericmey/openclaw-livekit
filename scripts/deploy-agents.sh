@@ -62,6 +62,8 @@ agent_label() {
 agent_discord_token() {
   # Per-agent Discord bot identity. Nyla is the orchestrator; Party
   # reuses Nyla's token so academy tools route through the same bot.
+  # If Party ever gets her own bot identity, add DISCORD_TOKEN_PARTY
+  # to the preflight checks below and map it here.
   case "$1" in
     nyla|party) echo "${DISCORD_TOKEN_NYLA}" ;;
     aoi)        echo "${DISCORD_TOKEN_AOI}"  ;;
@@ -75,6 +77,7 @@ render_plist() {
   label="$(agent_label "$agent")"
   local discord_token
   discord_token="$(agent_discord_token "$agent")"
+  [[ -n "${discord_token}" ]] || die "discord token for ${agent} is empty — check secrets file"
   local out="${LAUNCH_AGENTS_DIR}/ai.openclaw.livekit-agent-${agent}.plist"
 
   # sed-based render. envsubst would swallow any $... in paths; explicit

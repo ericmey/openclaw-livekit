@@ -70,15 +70,29 @@ else
 fi
 
 # ---- agents -------------------------------------------------------
+# Accept multiple log signatures so the check survives log-format drift.
+_agent_ok_patterns='registered worker|worker started|connected to server|session started'
 for a in nyla aoi party; do
   pid_line="$(launchctl list 2>/dev/null | awk -v lbl="ai.openclaw.livekit-agent-${a}" '$3 == lbl {print $1}')"
   if [[ -n "${pid_line}" && "${pid_line}" != "-" ]]; then
-    reg_line="$(grep 'registered worker' "${LOG_DIR}/agent-${a}.log" 2>/dev/null | tail -1 || true)"
-    if [[ -n "${reg_line}" ]]; then
-      worker_id="$(echo "${reg_line}" | grep -oE '"id": "[^"]+"' | head -1 | cut -d'"' -f4)"
-      record "agent-${a}" ok "pid=${pid_line} worker=${worker_id:-unknown}"
+    log_file="${LOG_DIR}/agent-${a}.log"
+    if [[ -f "${log_file}" ]]; then
+      # Check the log has been written to recently (< 5 min) — catches
+      # stale logs from a previous run after a crash.
+      last_write_age="$(($(date +%s) - $(stat -f '%m' "${log_file}" 2>/dev/null || echo 0)))"
+      reg_line="$(grep -E "${_agent_ok_patterns}" "${log_file}" 2>/dev/null | tail -1 || true)"
+      if [[ -n "${reg_line}" ]]; then
+        worker_id="$(echo "${reg_line}" | grep -oE '"id": "[^"]+"' | head -1 | cut -d'"' -f4)"
+        if [[ "${last_write_age}" -lt 300 ]]; then
+          record "agent-${a}" ok "pid=${pid_line} worker=${worker_id:-unknown}"
+        else
+          record "agent-${a}" fail "pid=${pid_line} but log stale (${last_write_age}s old)"
+        fi
+      else
+        record "agent-${a}" fail "pid=${pid_line} but no worker-registration line in log"
+      fi
     else
-      record "agent-${a}" fail "pid=${pid_line} but no registered-worker line in log"
+      record "agent-${a}" fail "pid=${pid_line} but no log file"
     fi
   else
     record "agent-${a}" fail "not running under launchd"

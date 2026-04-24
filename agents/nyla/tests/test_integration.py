@@ -24,6 +24,7 @@ from pathlib import Path
 import aiohttp
 import pytest
 import pytest_asyncio
+from sdk.musubi_client import MUSUBI_COLLECTION, qdrant_url
 
 # Add src/ to path so imports work
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -34,12 +35,6 @@ from livekit.agents.voice.run_result import ChatMessageEvent, FunctionCallEvent
 
 # Ensure env is loaded (GOOGLE_API_KEY etc.)
 load_env_once()
-
-# Qdrant config — matches musubi_client.py
-QDRANT_URL = (
-    f"http://{os.environ.get('QDRANT_HOST', 'localhost')}:{os.environ.get('QDRANT_PORT', '6333')}"
-)
-MUSUBI_COLLECTION = "musubi_memories"
 
 # Opt-in gate. These tests drive a real Gemini session and every tool
 # runs against production — Discord messages get sent, Musubi memories
@@ -100,7 +95,7 @@ async def cleanup_musubi():
     try:
         async with aiohttp.ClientSession() as http:
             async with http.post(
-                f"{QDRANT_URL}/collections/{MUSUBI_COLLECTION}/points/delete",
+                f"{qdrant_url()}/collections/{MUSUBI_COLLECTION}/points/delete",
                 json={
                     "filter": {
                         "must": [

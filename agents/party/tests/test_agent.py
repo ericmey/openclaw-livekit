@@ -111,32 +111,50 @@ class TestSDKImports:
     """Verify SDK dependencies import cleanly."""
 
     def test_import_env(self):
-        pass
+        from sdk.env import load_env
+
+        assert callable(load_env)
 
     def test_import_telephony(self):
-        pass
+        from sdk.telephony import resolve_caller
+
+        assert callable(resolve_caller)
 
     def test_import_trace(self):
-        pass
+        from sdk.trace import trace
+
+        assert callable(trace)
 
     def test_import_transcript(self):
-        pass
+        from sdk.transcript import wire_transcript_logging
+
+        assert callable(wire_transcript_logging)
 
 
 class TestProviderImports:
     """Verify chained pipeline provider imports."""
 
     def test_import_openai_stt(self):
-        pass
+        from livekit.plugins import openai as openai_plugin
+
+        assert openai_plugin is not None
 
     def test_import_silero_vad(self):
-        pass
+        from livekit.plugins import silero as silero_plugin
+
+        assert silero_plugin is not None
 
     def test_import_google_llm(self):
-        pass
+        from livekit.plugins import google as google_plugin
+
+        assert google_plugin is not None
 
     def test_import_elevenlabs_tts(self):
-        pass
+        from livekit.plugins import elevenlabs as elevenlabs_plugin
+
+        assert elevenlabs_plugin is not None
 
     def test_import_end_call_tool(self):
-        pass
+        from livekit.agents.beta import EndCallTool
+
+        assert EndCallTool is not None

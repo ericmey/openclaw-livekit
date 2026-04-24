@@ -20,7 +20,12 @@ _gateway_cache: tuple[int, str] | None = None
 
 
 def get_gateway_config() -> tuple[int, str] | None:
-    """Return ``(port, token)`` for the gateway, or None if not configured."""
+    """Return ``(port, token)`` for the gateway, or None if not configured.
+
+    The result is cached for the lifetime of the process. If you rotate
+    secrets and need the new values picked up without restarting the
+    agent, call ``invalidate_gateway_cache()`` first.
+    """
     global _gateway_cache
     if _gateway_cache is not None:
         return _gateway_cache
@@ -44,3 +49,13 @@ def get_gateway_config() -> tuple[int, str] | None:
 
     _gateway_cache = (port, token)
     return _gateway_cache
+
+
+def invalidate_gateway_cache() -> None:
+    """Clear the cached gateway config so the next call re-reads env.
+
+    Call this after rotating ``GATEWAY_AUTH_TOKEN`` or ``GATEWAY_PORT``
+    if you need the new values picked up without restarting the process.
+    """
+    global _gateway_cache
+    _gateway_cache = None

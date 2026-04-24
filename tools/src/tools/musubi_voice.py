@@ -26,6 +26,7 @@ Environment:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -153,8 +154,6 @@ class MusubiVoiceToolsMixin(Agent):
         # shared concept, merge by object_id, keep the top N by
         # score. `asyncio.gather` with `return_exceptions=True` so a
         # single plane failing doesn't blank the whole recall.
-        import asyncio
-
         coros = [
             client.retrieve(namespace=ns, query_text=query, mode="deep", limit=capped)
             for ns, _plane in targets
