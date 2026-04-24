@@ -37,10 +37,12 @@ from tools.memory import _format_row
 
 logger = logging.getLogger("openclaw-livekit.agent")
 
-_DEGRADED = "Couldn't check household status — Musubi is unavailable."
+_DEGRADED_TRANSIENT = "Couldn't check household status — Musubi is unavailable right now."
+_DEGRADED_HARD = "Couldn't check household status — access denied or misconfigured."
 _MAX_HOURS = 168  # one week — widest reasonable window for "what's been going on"
 _MAX_LIMIT = 30
 _PER_PRESENCE_SCROLL = 100  # how many rows per presence to over-fetch before merging
+_MAX_PAGES_PER_PRESENCE = 3  # cap pagination to keep latency bounded
 
 
 class HouseholdToolsMixin(Agent):
@@ -61,6 +63,40 @@ class HouseholdToolsMixin(Agent):
 
     def _musubi_v2_client(self) -> MusubiV2Client:
         return MusubiV2Client(config=MusubiV2ClientConfig.from_env())
+
+    async def _scroll_one_presence(
+        self,
+        client: MusubiV2Client,
+        presence: str,
+        cutoff: float,
+        need: int,
+        session: aiohttp.ClientSession,
+    ) -> list[dict[str, Any]]:
+        """Paginate ``GET /v1/episodic`` for a single presence until
+        we have ``need`` rows newer than ``cutoff`` or pages/cursors
+        are exhausted."""
+        rows: list[dict[str, Any]] = []
+        cursor: str | None = None
+        namespace = f"{presence}/episodic"
+
+        for _ in range(_MAX_PAGES_PER_PRESENCE):
+            page = await client.list_episodic(
+                namespace=namespace,
+                limit=_PER_PRESENCE_SCROLL,
+                cursor=cursor,
+                session=session,
+            )
+            items = page.get("items") or []
+            for r in items:
+                if (r.get("created_epoch") or 0) >= cutoff:
+                    rows.append(r)
+            if len(rows) >= need:
+                break
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
+
+        return rows
 
     @function_tool
     async def household_status(self, hours: int = 24, limit: int = 15) -> str:
@@ -91,9 +127,11 @@ class HouseholdToolsMixin(Agent):
         timeout = aiohttp.ClientTimeout(total=client.config.timeout_s * 2)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             coros = [
-                client.list_episodic(
-                    namespace=f"{presence}/episodic",
-                    limit=_PER_PRESENCE_SCROLL,
+                self._scroll_one_presence(
+                    client=client,
+                    presence=presence,
+                    cutoff=cutoff,
+                    need=limit,
                     session=session,
                 )
                 for presence in presences
@@ -101,12 +139,12 @@ class HouseholdToolsMixin(Agent):
             settled = await asyncio.gather(*coros, return_exceptions=True)
 
         merged: list[dict[str, Any]] = []
-        transient = False
         any_success = False
+        any_transient = False
         for presence, result in zip(presences, settled, strict=True):
             if isinstance(result, (MusubiV2TimeoutError, MusubiV2ServerError)):
                 logger.warning("household_status: transient for %s: %s", presence, result)
-                transient = True
+                any_transient = True
                 continue
             if isinstance(result, MusubiV2AuthError):
                 logger.warning("household_status: auth denied for %s: %s", presence, result)
@@ -121,13 +159,10 @@ class HouseholdToolsMixin(Agent):
                 logger.warning("household_status: unexpected %s: %r", presence, result)
                 continue
             any_success = True
-            items = result.get("items") or [] if isinstance(result, dict) else []
-            for row in items:
-                if (row.get("created_epoch") or 0) >= cutoff:
-                    merged.append(row)
+            merged.extend(result)
 
         if not any_success:
-            return _DEGRADED if transient else _DEGRADED
+            return _DEGRADED_TRANSIENT if any_transient else _DEGRADED_HARD
 
         if not merged:
             return "No recent activity across the household."

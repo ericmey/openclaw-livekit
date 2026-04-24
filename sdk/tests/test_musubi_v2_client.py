@@ -23,6 +23,7 @@ from sdk.musubi_v2_client import (
     MusubiV2ServerError,
     MusubiV2TimeoutError,
     capture_memory,
+    list_episodic,
     retrieve,
     send_thought,
 )
@@ -62,12 +63,22 @@ class _FakeSession:
         self.calls: list[dict[str, Any]] = []
 
     def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str]) -> Any:
-        self.calls.append({"url": url, "json": json, "headers": dict(headers)})
+        self.calls.append({"method": "POST", "url": url, "json": json, "headers": dict(headers)})
+        return self._next_response()
+
+    def get(
+        self, url: str, *, params: dict[str, str] | None = None, headers: dict[str, str]
+    ) -> Any:
+        self.calls.append(
+            {"method": "GET", "url": url, "params": dict(params or {}), "headers": dict(headers)}
+        )
+        return self._next_response()
+
+    def _next_response(self) -> Any:
         if not self._responses:
             raise AssertionError("no scripted response")
         resp = self._responses.pop(0)
         if isinstance(resp, Exception):
-            # Return an async context manager that re-raises on __aenter__
             return _RaisingCtx(resp)
         return resp
 
@@ -298,6 +309,100 @@ async def test_send_thought_posts_expected_shape() -> None:
 
 
 # ---------------------------------------------------------------------------
+# list_episodic — GET shape + params + error translation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_episodic_gets_expected_shape() -> None:
+    session = _FakeSession(
+        [_FakeResponse(200, {"items": [{"object_id": "e" * 27}], "next_cursor": "c1"})]
+    )
+    out = await list_episodic(
+        _cfg(),
+        namespace="eric/nyla/episodic",
+        limit=50,
+        session=session,  # type: ignore[arg-type]
+    )
+    assert out["items"][0]["object_id"] == "e" * 27
+    assert out["next_cursor"] == "c1"
+    call = session.calls[0]
+    assert call["method"] == "GET"
+    assert call["url"] == "http://musubi.test/v1/episodic"
+    assert call["params"]["namespace"] == "eric/nyla/episodic"
+    assert call["params"]["limit"] == "50"
+    assert "cursor" not in call["params"]
+
+
+@pytest.mark.asyncio
+async def test_list_episodic_passes_cursor_when_set() -> None:
+    session = _FakeSession([_FakeResponse(200, {"items": [], "next_cursor": None})])
+    await list_episodic(
+        _cfg(),
+        namespace="eric/nyla/episodic",
+        limit=10,
+        cursor="abc123",
+        session=session,  # type: ignore[arg-type]
+    )
+    assert session.calls[0]["params"]["cursor"] == "abc123"
+
+
+@pytest.mark.asyncio
+async def test_get_401_raises_auth_error() -> None:
+    session = _FakeSession([_FakeResponse(401, {"detail": "bad token"})])
+    with pytest.raises(MusubiV2AuthError):
+        await list_episodic(
+            _cfg(),
+            namespace="ns",
+            session=session,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_403_raises_auth_error() -> None:
+    session = _FakeSession([_FakeResponse(403, {"detail": "out of scope"})])
+    with pytest.raises(MusubiV2AuthError):
+        await list_episodic(
+            _cfg(),
+            namespace="ns",
+            session=session,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_4xx_raises_client_error() -> None:
+    session = _FakeSession([_FakeResponse(422, {"detail": "invalid namespace"})])
+    with pytest.raises(MusubiV2ClientError):
+        await list_episodic(
+            _cfg(),
+            namespace="ns",
+            session=session,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_5xx_raises_server_error() -> None:
+    session = _FakeSession([_FakeResponse(503, "boom")])
+    with pytest.raises(MusubiV2ServerError):
+        await list_episodic(
+            _cfg(),
+            namespace="ns",
+            session=session,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_timeout_raises_timeout_error() -> None:
+    session = _FakeSession([TimeoutError("no response")])
+    with pytest.raises(MusubiV2TimeoutError):
+        await list_episodic(
+            _cfg(),
+            namespace="ns",
+            session=session,  # type: ignore[arg-type]
+        )
+
+
+# ---------------------------------------------------------------------------
 # Facade class
 # ---------------------------------------------------------------------------
 
@@ -309,6 +414,7 @@ async def test_musubi_v2_client_facade_proxies_each_action() -> None:
             _FakeResponse(200, {"object_id": "m" * 27}),
             _FakeResponse(200, {"results": []}),
             _FakeResponse(200, {"object_id": "t" * 27}),
+            _FakeResponse(200, {"items": []}),
         ]
     )
     client = MusubiV2Client(config=_cfg())
@@ -329,7 +435,12 @@ async def test_musubi_v2_client_facade_proxies_each_action() -> None:
         content="hi",
         session=session,  # type: ignore[arg-type]
     )
+    ack4 = await client.list_episodic(
+        namespace="n",
+        session=session,  # type: ignore[arg-type]
+    )
     assert ack1["object_id"] == "m" * 27
     assert ack2 == {"results": []}
     assert ack3["object_id"] == "t" * 27
-    assert len(session.calls) == 3
+    assert ack4 == {"items": []}
+    assert len(session.calls) == 4

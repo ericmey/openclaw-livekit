@@ -50,16 +50,67 @@ class MemoryToolsMixin(Agent):
         """One place to construct the client so tests can monkeypatch."""
         return MusubiV2Client(config=MusubiV2ClientConfig.from_env())
 
-    def _own_episodic_namespace(self) -> str:
+    def _own_episodic_namespace(self) -> str | None:
         """Resolve this agent's own episodic namespace.
 
-        Prefers ``config.musubi_v2_presence`` (2-segment presence like
-        ``eric/nyla``) and appends ``/episodic``. Falls back to
-        ``eric/<agent_name>/episodic`` so an agent without explicit
-        v2 config still lands writes in a coherent namespace.
+        Uses ``config.musubi_v2_namespace`` (documented as the
+        namespace-scoping field) and appends ``/episodic``. Falls
+        back to ``config.musubi_v2_presence`` for backward compat
+        with configs that set presence but not namespace, then to
+        ``eric/<agent_name>/episodic``.
+
+        Returns ``None`` when the config prefix is malformed (not
+        2-segment), matching ``MusubiVoiceToolsMixin._ns()``
+        degradation behavior.
         """
-        presence = self.config.musubi_v2_presence or f"eric/{self.config.agent_name}"
-        return f"{presence}/episodic"
+        prefix = self.config.musubi_v2_namespace or self.config.musubi_v2_presence
+        if not prefix:
+            prefix = f"eric/{self.config.agent_name}"
+        segments = prefix.split("/")
+        if len(segments) != 2:
+            logger.warning(
+                "musubi_v2_namespace/presence %r is not 2-segment; episodic namespace will degrade",
+                prefix,
+            )
+            return None
+        return f"{prefix}/episodic"
+
+    async def _scroll_episodic(
+        self,
+        namespace: str,
+        cutoff: float,
+        need: int,
+        *,
+        max_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Paginate ``GET /v1/episodic`` until we have ``need`` rows
+        newer than ``cutoff`` or pages/cursors are exhausted.
+
+        Returns a list already sorted descending by ``created_epoch``.
+        """
+        rows: list[dict[str, Any]] = []
+        cursor: str | None = None
+        client = self._musubi_v2_client()
+        page_size = min(need * _SCROLL_MULTIPLIER, 500)
+
+        for _ in range(max_pages):
+            page = await client.list_episodic(
+                namespace=namespace,
+                limit=page_size,
+                cursor=cursor,
+            )
+            items = page.get("items") or []
+            for r in items:
+                if (r.get("created_epoch") or 0) >= cutoff:
+                    rows.append(r)
+            if len(rows) >= need:
+                break
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
+
+        rows.sort(key=lambda r: r.get("created_epoch") or 0, reverse=True)
+        return rows
 
     async def fetch_recent_context(self, hours: int = 24, limit: int = 10) -> str:
         """Plain-async fetch of recent memories from this agent's own namespace.
@@ -67,22 +118,22 @@ class MemoryToolsMixin(Agent):
         Exposed without ``@function_tool`` so ``on_enter`` can prefetch
         deterministically before the LLM gets a chance to skip the tool.
 
-        Strategy: list the namespace (up to a generous cap), filter
-        client-side by ``created_epoch > now - hours``, sort descending
-        by ``created_epoch``, format. ``GET /v1/episodic`` doesn't
-        natively time-filter, so we over-fetch and trim.
+        Strategy: paginate ``GET /v1/episodic`` (follow ``next_cursor``
+        until we have enough), filter client-side by
+        ``created_epoch > now - hours``, sort descending, format.
+        The endpoint doesn't natively time-filter, so we over-fetch
+        and trim.
         """
         trace(f"fetch_recent_context hours={hours} limit={limit}")
         hours = max(1, min(hours, _MAX_RECENT_HOURS))
         limit = max(1, min(limit, _MAX_RECENT_LIMIT))
         cutoff = time.time() - (hours * 3600)
         namespace = self._own_episodic_namespace()
+        if namespace is None:
+            return _DEGRADED_LOOKUP
 
         try:
-            page = await self._musubi_v2_client().list_episodic(
-                namespace=namespace,
-                limit=min(limit * _SCROLL_MULTIPLIER, 500),
-            )
+            rows = await self._scroll_episodic(namespace, cutoff, limit)
         except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
             logger.warning("musubi_recent: transient %s", err)
             return _DEGRADED_LOOKUP
@@ -96,11 +147,7 @@ class MemoryToolsMixin(Agent):
             logger.warning("musubi_recent: %s", err)
             return _DEGRADED_LOOKUP
 
-        items = page.get("items") or []
-        recent = [r for r in items if (r.get("created_epoch") or 0) >= cutoff]
-        recent.sort(key=lambda r: r.get("created_epoch") or 0, reverse=True)
-        top = recent[:limit]
-
+        top = rows[:limit]
         if not top:
             return "No recent memories found."
 
@@ -157,6 +204,8 @@ class MemoryToolsMixin(Agent):
             tag_list.append(speaker_tag)
 
         namespace = self._own_episodic_namespace()
+        if namespace is None:
+            return _DEGRADED_STORE
         idem = f"livekit-memory-store:{uuid.uuid4().hex}"
 
         try:
