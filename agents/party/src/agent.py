@@ -69,9 +69,9 @@ def _load_persona() -> str:
 
 #: Party's operational identity. The Harem World line is Nyla on the
 #: chained STT/LLM/TTS pipeline, so the config mirrors Nyla's — same
-#: Musubi namespace (``eric/nyla``) and same bearer token. If the
-#: Party line ever gets its own identity, fork this config and mint
-#: a distinct token.
+#: Musubi namespace (``nyla/voice``) and same bearer token. If the
+#: Party line ever gets its own identity, fork this config, give it
+#: a distinct ``<agent>/voice`` prefix, and mint a dedicated token.
 #:
 #: No ``household_presences`` — Party is a voice channel, not a
 #: surveying persona. She doesn't need the household-status tool.
@@ -80,8 +80,8 @@ PARTY_CONFIG = AgentConfig(
     memory_agent_tag="nyla-voice",
     discord_room=NYLA_DISCORD_ROOM,
     allowed_delegation_targets=None,
-    musubi_v2_namespace="eric/nyla",
-    musubi_v2_presence="eric/nyla",
+    musubi_v2_namespace="nyla/voice",
+    musubi_v2_presence="nyla/voice",
 )
 
 

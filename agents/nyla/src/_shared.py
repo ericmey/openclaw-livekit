@@ -39,18 +39,39 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 #: restrictions, delegated work posts to her own Discord room.
 #:
 #: Canonical Musubi fields (musubi_v2_*, household_presences) wire the
-#: v2 client + household-status tool. Household presences list every
-#: voice/text presence Nyla should survey when asked "what's been
-#: going on". Token scope must include ``eric/*/episodic:r`` for this
-#: list to resolve — party/other-agent reads 403 otherwise.
+#: v2 client + household-status tool per ADR 0030 (agent-as-tenant).
+#:
+#: - musubi_v2_namespace / _presence: 2-seg ``<agent>/<channel>``.
+#:   Memory writes land at ``nyla/voice/episodic``; thought sends
+#:   carry ``from_presence = nyla/voice``.
+#: - household_presences: every agent's voice presence Nyla may
+#:   survey when asked "what's been going on". Token scope grants
+#:   ``*/*/*:r`` to resolve all of them — cross-agent write still 403s.
+HOUSEHOLD_VOICE_PRESENCES: tuple[str, ...] = (
+    # nyla machine
+    "nyla/voice",
+    "aoi/voice",
+    "hana/voice",
+    "rin/voice",
+    "sumi/voice",
+    "tama/voice",
+    "yumi/voice",
+    # hana machine
+    "mizuki/voice",
+    "shiori/voice",
+    "reika/voice",
+    "yua/voice",
+    "nana/voice",
+)
+
 NYLA_CONFIG = AgentConfig(
     agent_name="nyla",
     memory_agent_tag="nyla-voice",
     discord_room=NYLA_DISCORD_ROOM,
     allowed_delegation_targets=None,
-    musubi_v2_namespace="eric/nyla",
-    musubi_v2_presence="eric/nyla",
-    household_presences=("eric/nyla", "eric/aoi", "eric/party", "eric/openclaw"),
+    musubi_v2_namespace="nyla/voice",
+    musubi_v2_presence="nyla/voice",
+    household_presences=HOUSEHOLD_VOICE_PRESENCES,
 )
 
 
