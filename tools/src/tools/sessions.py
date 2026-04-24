@@ -89,7 +89,7 @@ class SessionsToolsMixin(Agent):
                 'sumi', 'tama', 'yumi').
             message: The task or message to send to the agent.
             deliver_to: Where the result should land. Defaults to "room"
-                (Nyla's own Discord room — the right place for ambient
+                (your own default Discord room — the right place for ambient
                 background work). Use "dm" ONLY when the user explicitly
                 asks you to DM them, message them directly, or send the
                 result to them privately. Never guess "dm" — default
@@ -154,7 +154,7 @@ class SessionsToolsMixin(Agent):
             agent_id: The agent to spawn (e.g. 'hana', 'aoi', 'momo').
             task: The task description for the spawned agent.
             deliver_to: Where the result should land. Defaults to "room"
-                (Nyla's own Discord room — the right place for ambient
+                (your own default Discord room — the right place for ambient
                 background work). Use "dm" ONLY when the user explicitly
                 asks you to DM them, message them directly, or send the
                 result to them privately. Never guess "dm" — default

@@ -144,6 +144,21 @@ async def test_quiet_hours_require_confirmation(agent) -> None:
 @pytest.mark.asyncio
 async def test_successful_schedule_has_actionable_language(agent) -> None:
     """The happy path returns a confirmation the model can read aloud."""
-    result = await agent.schedule_callback(delay="30m", reason="check deploy")
+    fake_now_local = datetime(2026, 4, 18, 12, 0, tzinfo=ERIC_TZ)
+    fake_now_utc = fake_now_local.astimezone(UTC)
+
+    real_datetime = datetime
+
+    class _FakeDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return fake_now_utc if tz else fake_now_local
+
+    with patch(
+        "tools.sessions.datetime",
+        _FakeDatetime,
+    ):
+        result = await agent.schedule_callback(delay="30m", reason="check deploy")
+
     assert "scheduled" in result.lower()
     assert "30m" in result

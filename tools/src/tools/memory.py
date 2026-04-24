@@ -108,8 +108,8 @@ class MemoryToolsMixin(Agent):
         by the runtime — you don't need to call this tool just to greet.
 
         Args:
-            hours: How many hours back to look (default 24).
-            limit: Maximum number of memories to return (default 10).
+            hours: How many hours back to look (default 24, max 72).
+            limit: Maximum number of memories to return (default 10, max 20).
         """
         return await self.fetch_recent_context(hours=hours, limit=limit)
 
