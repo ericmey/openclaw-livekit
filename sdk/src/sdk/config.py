@@ -52,6 +52,13 @@ class AgentConfig:
             ``from_presence`` for `musubi_think` thought sends. Shape:
             ``<owner>/<agent>`` (e.g. ``eric/aoi``). Defaults to
             ``eric/<agent_name>`` at call time when ``None``.
+        household_presences: Presences this agent may survey via
+            ``household_status`` (``HouseholdToolsMixin``). Each entry
+            is a 2-segment presence like ``eric/nyla``. Empty tuple
+            means the agent has no household-wide visibility — the
+            mixin should not be mixed in for that agent. Nyla and Aoi
+            get the full household list; party/voice personas that
+            mirror another agent get an empty tuple by default.
     """
 
     agent_name: str
@@ -60,6 +67,7 @@ class AgentConfig:
     allowed_delegation_targets: frozenset[str] | None = None
     musubi_v2_namespace: str | None = None
     musubi_v2_presence: str | None = None
+    household_presences: tuple[str, ...] = ()
 
 
 # Default config preserves the pre-AgentConfig behavior: tag everything

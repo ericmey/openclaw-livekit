@@ -19,6 +19,7 @@ from .base_agent import (
     load_persona,
 )
 from .core import CoreToolsMixin
+from .household import HouseholdToolsMixin
 from .memory import MemoryToolsMixin
 from .musubi_voice import MusubiVoiceToolsMixin
 from .sessions import SessionsToolsMixin
@@ -27,6 +28,7 @@ __all__ = [
     "AcademyToolsMixin",
     "BaseRealtimeAgent",
     "CoreToolsMixin",
+    "HouseholdToolsMixin",
     "MemoryToolsMixin",
     "MusubiVoiceToolsMixin",
     "SessionsToolsMixin",

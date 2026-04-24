@@ -22,6 +22,7 @@ from tools.base_agent import (
 from tools.base_agent import (
     load_persona as _load_persona,
 )
+from tools.household import HouseholdToolsMixin
 
 __all__ = [
     "NYLA_CONFIG",
@@ -36,16 +37,25 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 #: Nyla's operational identity. Household router — no delegation
 #: restrictions, delegated work posts to her own Discord room.
+#:
+#: Canonical Musubi fields (musubi_v2_*, household_presences) wire the
+#: v2 client + household-status tool. Household presences list every
+#: voice/text presence Nyla should survey when asked "what's been
+#: going on". Token scope must include ``eric/*/episodic:r`` for this
+#: list to resolve — party/other-agent reads 403 otherwise.
 NYLA_CONFIG = AgentConfig(
     agent_name="nyla",
     memory_agent_tag="nyla-voice",
     discord_room=NYLA_DISCORD_ROOM,
     allowed_delegation_targets=None,
+    musubi_v2_namespace="eric/nyla",
+    musubi_v2_presence="eric/nyla",
+    household_presences=("eric/nyla", "eric/aoi", "eric/party", "eric/openclaw"),
 )
 
 
-class NylaAgent(BaseRealtimeAgent):
-    """Nyla with all OpenClaw platform tools."""
+class NylaAgent(HouseholdToolsMixin, BaseRealtimeAgent):
+    """Nyla with all OpenClaw platform tools + household survey."""
 
     config = NYLA_CONFIG
 

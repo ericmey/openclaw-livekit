@@ -143,7 +143,7 @@ async def test_capture_memory_posts_expected_shape() -> None:
     assert ack["object_id"] == "m" * 27
     assert len(session.calls) == 1
     call = session.calls[0]
-    assert call["url"] == "http://musubi.test/v1/memories"
+    assert call["url"] == "http://musubi.test/v1/episodic"
     # Canonical `CaptureRequest` accepts namespace/content/tags/
     # importance (+ optional summary/created_at). `topics` used to
     # be sent and silently dropped server-side; callers now fold
