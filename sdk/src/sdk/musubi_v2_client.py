@@ -109,7 +109,7 @@ async def capture_memory(
     idempotency_key: str | None = None,
     session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
-    """POST /v1/memories — capture an episodic memory.
+    """POST /v1/episodic — capture an episodic memory.
 
     Returns the ack dict (includes `object_id` + lifecycle state). The
     caller owns `idempotency_key`; absent one, we generate a fresh UUID
@@ -130,7 +130,7 @@ async def capture_memory(
     }
     return await _post(
         config,
-        path="/memories",
+        path="/episodic",
         body=body,
         idempotency_key=idempotency_key or uuid.uuid4().hex,
         session=session,
@@ -189,6 +189,73 @@ async def send_thought(
     return await _post(
         config, path="/thoughts/send", body=body, idempotency_key=uuid.uuid4().hex, session=session
     )
+
+
+async def list_episodic(
+    config: MusubiV2ClientConfig,
+    *,
+    namespace: str,
+    limit: int = 50,
+    cursor: str | None = None,
+    session: aiohttp.ClientSession | None = None,
+) -> dict[str, Any]:
+    """GET /v1/episodic — list memories in a namespace.
+
+    Returns ``{"items": [...], "next_cursor": str|null}``. Items are
+    whatever order Qdrant's scroll returns; callers that want
+    time-descending should sort by ``created_epoch`` client-side.
+
+    Used by ``MemoryToolsMixin.fetch_recent_context`` (per-agent) and
+    ``HouseholdToolsMixin.household_status`` (cross-agent fan-out).
+    """
+    params = {"namespace": namespace, "limit": str(limit)}
+    if cursor:
+        params["cursor"] = cursor
+    return await _get(config, path="/episodic", params=params, session=session)
+
+
+async def _get(
+    config: MusubiV2ClientConfig,
+    *,
+    path: str,
+    params: dict[str, str] | None = None,
+    session: aiohttp.ClientSession | None = None,
+) -> dict[str, Any]:
+    """Shared GET path — mirrors ``_post`` for read endpoints."""
+    url = f"{config.base_url}{path}"
+    headers: dict[str, str] = {
+        _BEARER_HEADER: f"Bearer {config.token}",
+        _REQUEST_ID_HEADER: uuid.uuid4().hex,
+    }
+
+    async def _do(http: aiohttp.ClientSession) -> dict[str, Any]:
+        try:
+            async with http.get(url, params=params, headers=headers) as resp:
+                text = await resp.text()
+                if resp.status == 401 or resp.status == 403:
+                    raise MusubiV2AuthError(f"{resp.status} on {path}: {text[:200]}")
+                if 400 <= resp.status < 500:
+                    raise MusubiV2ClientError(f"{resp.status} on {path}: {text[:200]}")
+                if resp.status >= 500:
+                    raise MusubiV2ServerError(f"{resp.status} on {path}: {text[:200]}")
+                if not text:
+                    return {}
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception as exc:
+                    raise MusubiV2ServerError(f"non-JSON response on {path}: {exc}") from exc
+                if not isinstance(data, dict):
+                    raise MusubiV2ServerError(f"expected JSON object on {path}, got {type(data)!r}")
+                return data
+        except TimeoutError as exc:
+            raise MusubiV2TimeoutError(f"timeout on {path} after {config.timeout_s}s") from exc
+
+    if session is not None:
+        return await _do(session)
+
+    timeout = aiohttp.ClientTimeout(total=config.timeout_s)
+    async with aiohttp.ClientSession(timeout=timeout) as http:
+        return await _do(http)
 
 
 async def _post(
@@ -312,6 +379,22 @@ class MusubiV2Client:
             session=session,
         )
 
+    async def list_episodic(
+        self,
+        *,
+        namespace: str,
+        limit: int = 50,
+        cursor: str | None = None,
+        session: aiohttp.ClientSession | None = None,
+    ) -> dict[str, Any]:
+        return await list_episodic(
+            self.config,
+            namespace=namespace,
+            limit=limit,
+            cursor=cursor,
+            session=session,
+        )
+
 
 __all__ = [
     "DEFAULT_BASE_URL",
@@ -326,6 +409,7 @@ __all__ = [
     "MusubiV2ServerError",
     "MusubiV2TimeoutError",
     "capture_memory",
+    "list_episodic",
     "retrieve",
     "send_thought",
 ]

@@ -1,129 +1,167 @@
-"""MemoryToolsMixin — musubi_recent, memory_store."""
+"""MemoryToolsMixin — musubi_recent, memory_store (canonical-API backed)."""
 
 from __future__ import annotations
 
 import logging
 import time
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
-import aiohttp
 from livekit.agents import Agent, function_tool
 from sdk.config import NYLA_DEFAULT_CONFIG, AgentConfig
-from sdk.musubi_client import (
-    MUSUBI_COLLECTION,
-    MUSUBI_TIMEOUT_S,
-    async_embed_text,
-    qdrant_url,
+from sdk.musubi_v2_client import (
+    MusubiV2AuthError,
+    MusubiV2Client,
+    MusubiV2ClientConfig,
+    MusubiV2ClientError,
+    MusubiV2Error,
+    MusubiV2ServerError,
+    MusubiV2TimeoutError,
 )
 from sdk.trace import trace
 
 logger = logging.getLogger("openclaw-livekit.agent")
 
-# Shared TCP connector for Qdrant calls — avoids TCP handshake per request
-# while keeping sessions scoped to individual requests (no cross-event-loop
-# or unclosed-session issues). The connector is closed at process exit.
-_qdrant_connector: aiohttp.TCPConnector | None = None
-
-
-def _shared_qdrant_connector() -> aiohttp.TCPConnector:
-    global _qdrant_connector
-    if _qdrant_connector is None or _qdrant_connector.closed:
-        _qdrant_connector = aiohttp.TCPConnector(limit=10)
-    return _qdrant_connector
-
-
-# Connector cleanup: TCPConnector.close() may be typed as async in some
-# aiohttp stub versions. We skip atexit cleanup — the OS reclaims sockets
-# on process exit, and per-request sessions (which reference this connector)
-# are properly closed after each call.
+_DEGRADED_LOOKUP = "Couldn't check memory — Musubi is unavailable right now."
+_DEGRADED_STORE = "Memory didn't save — Musubi is unavailable right now."
+_MAX_RECENT_LIMIT = 20
+_MAX_RECENT_HOURS = 72
+_SCROLL_MULTIPLIER = 5
 
 
 class MemoryToolsMixin(Agent):
-    """Provides musubi_recent and memory_store tools.
+    """Provides ``musubi_recent`` and ``memory_store`` tools.
 
-    Reads the voice identity from ``self.config.memory_agent_tag`` so
-    stored memories land in the right bucket per speaker. Concrete agents
-    build an ``AgentConfig`` and set ``self.config`` before calling
-    ``super().__init__()``. If no config is set, the SDK-level default
-    (Nyla) applies — safe fallback, matches pre-AgentConfig behavior.
+    Per-agent scope: each agent reads and writes only its own episodic
+    namespace (``eric/<agent>/episodic``). Cross-agent "what's been
+    going on" is a separate concern — see ``HouseholdToolsMixin``.
+
+    Reads:
+      - ``self.config.musubi_v2_presence`` — resolves the 3-segment
+        namespace ``<presence>/episodic``. Falls back to
+        ``eric/<agent_name>/episodic`` when unset so existing configs
+        work without an explicit presence.
+      - ``MUSUBI_V2_BASE_URL`` / ``MUSUBI_V2_TOKEN`` env.
     """
 
-    #: Class-level fallback. Instance-level ``self.config`` set by the
-    #: concrete agent takes precedence. Keeping a class default means
-    #: agents that forget to set one still behave sanely.
     config: AgentConfig = NYLA_DEFAULT_CONFIG
 
-    async def fetch_recent_context(self, hours: int = 24, limit: int = 10) -> str:
-        """Plain-async fetch of recent household memories.
+    def _musubi_v2_client(self) -> MusubiV2Client:
+        """One place to construct the client so tests can monkeypatch."""
+        return MusubiV2Client(config=MusubiV2ClientConfig.from_env())
 
-        This is the same logic as the ``musubi_recent`` tool, exposed
-        without the ``@function_tool`` wrapper so agent code can prefetch
-        context deterministically at ``on_enter`` time — before the LLM
-        gets a chance to skip calling the tool.
+    def _own_episodic_namespace(self) -> str | None:
+        """Resolve this agent's own episodic namespace.
+
+        Uses ``config.musubi_v2_namespace`` (documented as the
+        namespace-scoping field) and appends ``/episodic``. Falls
+        back to ``config.musubi_v2_presence`` for backward compat
+        with configs that set presence but not namespace, then to
+        ``eric/<agent_name>/episodic``.
+
+        Returns ``None`` when the config prefix is malformed (not
+        2-segment), matching ``MusubiVoiceToolsMixin._ns()``
+        degradation behavior.
+        """
+        prefix = self.config.musubi_v2_namespace or self.config.musubi_v2_presence
+        if not prefix:
+            prefix = f"eric/{self.config.agent_name}"
+        segments = prefix.split("/")
+        if len(segments) != 2:
+            logger.warning(
+                "musubi_v2_namespace/presence %r is not 2-segment; episodic namespace will degrade",
+                prefix,
+            )
+            return None
+        return f"{prefix}/episodic"
+
+    async def _scroll_episodic(
+        self,
+        namespace: str,
+        cutoff: float,
+        need: int,
+        *,
+        max_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Paginate ``GET /v1/episodic`` until we have ``need`` rows
+        newer than ``cutoff`` or pages/cursors are exhausted.
+
+        Returns a list already sorted descending by ``created_epoch``.
+        """
+        rows: list[dict[str, Any]] = []
+        cursor: str | None = None
+        client = self._musubi_v2_client()
+        page_size = min(need * _SCROLL_MULTIPLIER, 500)
+
+        for _ in range(max_pages):
+            page = await client.list_episodic(
+                namespace=namespace,
+                limit=page_size,
+                cursor=cursor,
+            )
+            items = page.get("items") or []
+            for r in items:
+                if (r.get("created_epoch") or 0) >= cutoff:
+                    rows.append(r)
+            if len(rows) >= need:
+                break
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
+
+        rows.sort(key=lambda r: r.get("created_epoch") or 0, reverse=True)
+        return rows
+
+    async def fetch_recent_context(self, hours: int = 24, limit: int = 10) -> str:
+        """Plain-async fetch of recent memories from this agent's own namespace.
+
+        Exposed without ``@function_tool`` so ``on_enter`` can prefetch
+        deterministically before the LLM gets a chance to skip the tool.
+
+        Strategy: paginate ``GET /v1/episodic`` (follow ``next_cursor``
+        until we have enough), filter client-side by
+        ``created_epoch > now - hours``, sort descending, format.
+        The endpoint doesn't natively time-filter, so we over-fetch
+        and trim.
         """
         trace(f"fetch_recent_context hours={hours} limit={limit}")
-        cutoff_epoch = time.time() - (hours * 3600)
-        body: dict[str, Any] = {
-            "filter": {
-                "must": [
-                    {
-                        "key": "created_epoch",
-                        "range": {"gte": cutoff_epoch},
-                    }
-                ]
-            },
-            "limit": limit,
-            "with_payload": True,
-            "with_vector": False,
-            "order_by": {"key": "created_epoch", "direction": "desc"},
-        }
+        hours = max(1, min(hours, _MAX_RECENT_HOURS))
+        limit = max(1, min(limit, _MAX_RECENT_LIMIT))
+        cutoff = time.time() - (hours * 3600)
+        namespace = self._own_episodic_namespace()
+        if namespace is None:
+            return _DEGRADED_LOOKUP
 
         try:
-            timeout = aiohttp.ClientTimeout(total=MUSUBI_TIMEOUT_S)
-            async with aiohttp.ClientSession(
-                connector=_shared_qdrant_connector(),
-                timeout=timeout,
-            ) as http:
-                async with http.post(
-                    f"{qdrant_url()}/collections/{MUSUBI_COLLECTION}/points/scroll",
-                    json=body,
-                ) as resp:
-                    if resp.status != 200:
-                        text = (await resp.text())[:160]
-                        logger.warning("musubi_recent: qdrant %d: %s", resp.status, text)
-                        return f"Couldn't check memory — Qdrant returned {resp.status}."
-                    data = await resp.json()
-        except TimeoutError:
-            logger.warning("musubi_recent: qdrant timed out (%.0fms)", MUSUBI_TIMEOUT_S * 1000)
-            return "Couldn't check memory — Qdrant didn't respond in time."
-        except Exception as err:
+            rows = await self._scroll_episodic(namespace, cutoff, limit)
+        except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
+            logger.warning("musubi_recent: transient %s", err)
+            return _DEGRADED_LOOKUP
+        except MusubiV2AuthError as err:
+            logger.error("musubi_recent: auth failure: %s", err)
+            return _DEGRADED_LOOKUP
+        except MusubiV2ClientError as err:
+            logger.error("musubi_recent: bad request: %s", err)
+            return _DEGRADED_LOOKUP
+        except MusubiV2Error as err:
             logger.warning("musubi_recent: %s", err)
-            return f"Couldn't check memory — Qdrant lookup failed: {err}"
+            return _DEGRADED_LOOKUP
 
-        points = (data.get("result") or {}).get("points") or []
-        if not points:
+        top = rows[:limit]
+        if not top:
             return "No recent memories found."
 
-        lines: list[str] = []
-        for p in points:
-            payload = p.get("payload") or {}
-            agent_name = payload.get("agent") or "?"
-            content = payload.get("content") or ""
-            lines.append(f"[{agent_name}] {content}")
-        return "\n\n".join(lines)
+        return "\n\n".join(_format_row(r) for r in top)
 
     @function_tool
     async def musubi_recent(self, hours: int = 24, limit: int = 10) -> str:
-        """Fetch recent memories from all agents in the household.
+        """Fetch recent memories from your own episodic stream.
 
         Invocation Condition: Invoke this tool whenever the user asks
-        about recent activity, what agents have been doing, what you
-        talked about before, or what's been going on. Examples: "What's
-        everyone been up to?", "What did we talk about yesterday?",
-        "How's the house?" You MUST call this tool before making any
-        claims about recent agent activity or past conversations.
+        about your own recent activity, what you talked about before,
+        or what's been going on with you. Examples: "What did we talk
+        about yesterday?", "What have you been up to?" You MUST call
+        this tool before making any claims about past conversations.
 
         Start-of-call context is already injected into your instructions
         by the runtime — you don't need to call this tool just to greet.
@@ -136,7 +174,7 @@ class MemoryToolsMixin(Agent):
 
     @function_tool
     async def memory_store(self, content: str, tags: list[str] | None = None) -> str:
-        """Store a memory to Musubi for future recall between calls.
+        """Store a memory to Musubi for future recall.
 
         Invocation Condition: Invoke this tool whenever the user asks you
         to remember something, save something for later, or make a note.
@@ -156,64 +194,61 @@ class MemoryToolsMixin(Agent):
         if not content.strip():
             return "Error: content is required."
 
-        tag_list = tags or []
-        agent_name = self.config.memory_agent_tag
+        tag_list = list(tags or [])
+        # Route the legacy ``memory_agent_tag`` into a tag so the row
+        # still carries the speaker identity — the old direct-Qdrant
+        # path wrote it into ``payload.agent``; canonical doesn't have
+        # that field. Tagging keeps filter parity for older queries.
+        speaker_tag = self.config.memory_agent_tag
+        if speaker_tag and speaker_tag not in tag_list:
+            tag_list.append(speaker_tag)
+
+        namespace = self._own_episodic_namespace()
+        if namespace is None:
+            return _DEGRADED_STORE
+        idem = f"livekit-memory-store:{uuid.uuid4().hex}"
 
         try:
-            vector = await async_embed_text(content)
-        except Exception as err:
-            logger.error("memory_store: embedding failed: %s", err)
-            trace(f"tool=memory_store EMBED_FAIL {err}")
-            return "Memory didn't save — embeddings service is unavailable."
+            ack = await self._musubi_v2_client().capture_memory(
+                namespace=namespace,
+                content=content,
+                tags=tag_list,
+                importance=7,
+                idempotency_key=idem,
+            )
+        except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
+            logger.warning("memory_store: transient %s", err)
+            return _DEGRADED_STORE
+        except MusubiV2AuthError as err:
+            logger.error("memory_store: auth failure: %s", err)
+            return "Memory didn't save — auth failed."
+        except MusubiV2ClientError as err:
+            logger.error("memory_store: bad request: %s", err)
+            return "Memory didn't save — request rejected."
+        except MusubiV2Error as err:
+            logger.warning("memory_store: %s", err)
+            return "Memory didn't save — unknown error."
 
-        ts = datetime.now(UTC)
-        point_id = str(uuid.uuid4())
-        payload = {
-            "content": content,
-            "type": "user",
-            "agent": agent_name,
-            "tags": tag_list,
-            "context": "",
-            "created_at": ts.isoformat(),
-            "created_epoch": ts.timestamp(),
-            "updated_at": ts.isoformat(),
-            "updated_epoch": ts.timestamp(),
-            "access_count": 0,
-        }
-
-        body = {
-            "points": [
-                {
-                    "id": point_id,
-                    "vector": vector,
-                    "payload": payload,
-                }
-            ]
-        }
-
-        try:
-            # Writes need a longer timeout than reads — Qdrant may need to
-            # flush to disk. Use 2s while still sharing the connection pool.
-            timeout = aiohttp.ClientTimeout(total=2)
-            async with aiohttp.ClientSession(
-                connector=_shared_qdrant_connector(),
-                timeout=timeout,
-            ) as http:
-                async with http.put(
-                    f"{qdrant_url()}/collections/{MUSUBI_COLLECTION}/points",
-                    json=body,
-                    params={"wait": "true"},
-                ) as resp:
-                    if resp.status not in (200, 201):
-                        text = (await resp.text())[:160]
-                        logger.error("memory_store: qdrant %d: %s", resp.status, text)
-                        return f"Memory didn't save — Qdrant returned {resp.status}."
-        except TimeoutError:
-            logger.warning("memory_store: qdrant timed out")
-            return "Memory didn't save — Qdrant didn't respond in time."
-        except Exception as err:
-            logger.error("memory_store: %s", err)
-            return f"Memory didn't save — Qdrant write failed: {err}"
-
-        trace(f"tool=memory_store DONE id={point_id}")
+        object_id = ack.get("object_id") or "<unknown>"
+        trace(f"tool=memory_store DONE id={object_id}")
         return "Got it, stored."
+
+
+def _format_row(row: dict[str, Any]) -> str:
+    """One-line render for a scrolled episodic row.
+
+    Used by ``fetch_recent_context`` and (via the shared helper in
+    ``tools.household``) household status. Kept simple — LLM reads
+    this, not a human in a terminal.
+    """
+    tags = row.get("tags") or []
+    agent_tag = next(
+        (t for t in tags if isinstance(t, str) and t.endswith("-voice")),
+        None,
+    )
+    speaker = agent_tag.removesuffix("-voice") if agent_tag else (row.get("namespace") or "?")
+    content = (row.get("content") or "").strip()
+    return f"[{speaker}] {content}"
+
+
+__all__ = ["MemoryToolsMixin"]

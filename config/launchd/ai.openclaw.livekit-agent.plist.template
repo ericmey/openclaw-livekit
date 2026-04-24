@@ -69,6 +69,14 @@
       <string>{{GATEWAY_AUTH_TOKEN}}</string>
       <key>DISCORD_BOT_TOKEN</key>
       <string>{{DISCORD_BOT_TOKEN}}</string>
+      <!-- Canonical Musubi (v0.6.0+) — base URL shared by every agent,
+           per-agent bearer token resolved by scripts/deploy-agents.sh
+           from secrets/livekit-agents.env (MUSUBI_V2_TOKEN_NYLA /
+           _AOI). Party reuses Nyla's token — see PartyAgent config. -->
+      <key>MUSUBI_V2_BASE_URL</key>
+      <string>{{MUSUBI_V2_BASE_URL}}</string>
+      <key>MUSUBI_V2_TOKEN</key>
+      <string>{{MUSUBI_V2_TOKEN}}</string>
       <key>NODE_EXTRA_CA_CERTS</key>
       <string>/etc/ssl/cert.pem</string>
     </dict>

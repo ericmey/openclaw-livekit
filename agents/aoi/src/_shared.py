@@ -19,6 +19,7 @@ from tools.base_agent import (
 from tools.base_agent import (
     load_persona as _load_persona,
 )
+from tools.household import HouseholdToolsMixin
 
 __all__ = [
     "AOI_CONFIG",
@@ -57,11 +58,14 @@ AOI_CONFIG = AgentConfig(
             "nyla",  # hand back to the household router on explicit ask
         }
     ),
+    musubi_v2_namespace="eric/aoi",
+    musubi_v2_presence="eric/aoi",
+    household_presences=("eric/nyla", "eric/aoi", "eric/party", "eric/openclaw"),
 )
 
 
-class AoiAgent(BaseRealtimeAgent):
-    """Aoi with all OpenClaw platform tools."""
+class AoiAgent(HouseholdToolsMixin, BaseRealtimeAgent):
+    """Aoi with all OpenClaw platform tools + household survey."""
 
     config = AOI_CONFIG
 

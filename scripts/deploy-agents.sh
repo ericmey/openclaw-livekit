@@ -38,6 +38,9 @@ set -a; . "${SECRETS}"; set +a
 : "${GATEWAY_AUTH_TOKEN:?GATEWAY_AUTH_TOKEN missing from ${SECRETS}}"
 : "${DISCORD_TOKEN_NYLA:?DISCORD_TOKEN_NYLA missing from ${SECRETS}}"
 : "${DISCORD_TOKEN_AOI:?DISCORD_TOKEN_AOI missing from ${SECRETS}}"
+: "${MUSUBI_V2_BASE_URL:?MUSUBI_V2_BASE_URL missing from ${SECRETS}}"
+: "${MUSUBI_V2_TOKEN_NYLA:?MUSUBI_V2_TOKEN_NYLA missing from ${SECRETS}}"
+: "${MUSUBI_V2_TOKEN_AOI:?MUSUBI_V2_TOKEN_AOI missing from ${SECRETS}}"
 
 # Agents to deploy (default: all three). Build the array from positional
 # args, or fall back to all three if none were given — the explicit $#
@@ -72,6 +75,19 @@ agent_discord_token() {
   esac
 }
 
+agent_musubi_token() {
+  # Per-agent Musubi bearer (HS256 JWT, 1yr exp). Party reuses Nyla's
+  # token because Party's AgentConfig mirrors Nyla's namespace — same
+  # presence, same scope. If Party ever forks its identity, mint a
+  # separate token and add MUSUBI_V2_TOKEN_PARTY to preflight +
+  # mapping here.
+  case "$1" in
+    nyla|party) echo "${MUSUBI_V2_TOKEN_NYLA}" ;;
+    aoi)        echo "${MUSUBI_V2_TOKEN_AOI}"  ;;
+    *)          die "no musubi token mapping for: $1" ;;
+  esac
+}
+
 render_plist() {
   local agent="$1"
   local label
@@ -79,6 +95,9 @@ render_plist() {
   local discord_token
   discord_token="$(agent_discord_token "$agent")"
   [[ -n "${discord_token}" ]] || die "discord token for ${agent} is empty — check secrets file"
+  local musubi_token
+  musubi_token="$(agent_musubi_token "$agent")"
+  [[ -n "${musubi_token}" ]] || die "musubi token for ${agent} is empty — check secrets file"
   local out="${LAUNCH_AGENTS_DIR}/ai.openclaw.livekit-agent-${agent}.plist"
 
   # sed-based render. envsubst would swallow any $... in paths; explicit
@@ -95,6 +114,8 @@ render_plist() {
     -e "s|{{GOOGLE_API_KEY}}|${GOOGLE_API_KEY}|g" \
     -e "s|{{GATEWAY_AUTH_TOKEN}}|${GATEWAY_AUTH_TOKEN}|g" \
     -e "s|{{DISCORD_BOT_TOKEN}}|${discord_token}|g" \
+    -e "s|{{MUSUBI_V2_BASE_URL}}|${MUSUBI_V2_BASE_URL}|g" \
+    -e "s|{{MUSUBI_V2_TOKEN}}|${musubi_token}|g" \
     -e "s|{{OPENCLAW_BIN}}|${OPENCLAW_BIN}|g" \
     "${TEMPLATE}" > "${out}"
 
