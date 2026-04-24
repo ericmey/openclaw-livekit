@@ -58,9 +58,26 @@ AOI_CONFIG = AgentConfig(
             "nyla",  # hand back to the household router on explicit ask
         }
     ),
-    musubi_v2_namespace="eric/aoi",
-    musubi_v2_presence="eric/aoi",
-    household_presences=("eric/nyla", "eric/aoi", "eric/party", "eric/openclaw"),
+    # Canonical Musubi under agent-as-tenant (ADR 0030): Aoi writes to
+    # ``aoi/voice/*`` and surveys the same household list as Nyla.
+    musubi_v2_namespace="aoi/voice",
+    musubi_v2_presence="aoi/voice",
+    household_presences=(
+        # nyla machine
+        "nyla/voice",
+        "aoi/voice",
+        "hana/voice",
+        "rin/voice",
+        "sumi/voice",
+        "tama/voice",
+        "yumi/voice",
+        # hana machine
+        "mizuki/voice",
+        "shiori/voice",
+        "reika/voice",
+        "yua/voice",
+        "nana/voice",
+    ),
 )
 
 
