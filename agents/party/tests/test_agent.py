@@ -65,6 +65,18 @@ class TestAgentClass:
         agent = agent_module.PartyAgent(instructions="test")
         assert agent._caller_from is None
 
+    def test_does_not_inherit_household_tools(self, agent_module):
+        """Party is a voice channel, not a surveying persona —
+        she uses musubi_recent (self-only) and does not have
+        household_status."""
+        from tools.household import HouseholdToolsMixin
+
+        assert not issubclass(agent_module.PartyAgent, HouseholdToolsMixin)
+
+    def test_household_status_absent(self, agent_module):
+        agent = agent_module.PartyAgent(instructions="test")
+        assert not hasattr(agent, "household_status")
+
     def test_active_tools_present(self, agent_module):
         """Tools currently exposed to the voice model. schedule_callback
         is deliberately OFF this list — the cron path isn't wired; see
@@ -100,6 +112,20 @@ class TestPersona:
         prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
         content = prompt_path.read_text(encoding="utf-8").strip()
         assert len(content) > 100, "Persona file seems too short"
+
+    def test_prompt_does_not_route_to_household_status(self):
+        """Party doesn't compose HouseholdToolsMixin; household queries
+        fall back to self-only musubi_recent."""
+        prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+        content = prompt_path.read_text(encoding="utf-8")
+        assert "household_status()" not in content, (
+            "Party prompt must not reference household_status"
+        )
+
+    def test_prompt_keeps_musubi_recent(self):
+        prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+        content = prompt_path.read_text(encoding="utf-8")
+        assert "musubi_recent()" in content, "Prompt must still reference musubi_recent"
 
     def test_load_persona_function(self, agent_module):
         persona = agent_module._load_persona()

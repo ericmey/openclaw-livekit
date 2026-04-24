@@ -64,6 +64,15 @@ class TestAgentClass:
         )
         assert agent._caller_from == "+13175551234"
 
+    def test_inherits_household_tools(self, agent_module):
+        from tools.household import HouseholdToolsMixin
+
+        assert issubclass(agent_module.NylaAgent, HouseholdToolsMixin)
+
+    def test_household_status_tool_present(self, agent_module):
+        agent = agent_module.NylaAgent(instructions="test")
+        assert hasattr(agent, "household_status")
+
     def test_active_tools_present(self, agent_module):
         """Tools currently exposed to the voice model. schedule_callback
         is deliberately OFF this list — the cron path isn't wired; see
@@ -78,6 +87,7 @@ class TestAgentClass:
             "sessions_spawn",
             "academy_selfie",
             "academy_send",
+            "household_status",
         ]
         for tool in expected:
             assert hasattr(agent, tool), f"Missing tool: {tool}"
@@ -133,6 +143,23 @@ class TestPersona:
         prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
         content = prompt_path.read_text(encoding="utf-8")
         assert "Nyla" in content, "Persona must mention Nyla"
+
+    def test_prompt_routes_household_to_household_status(self):
+        prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+        content = prompt_path.read_text(encoding="utf-8")
+        assert "household_status()" in content, (
+            "Prompt must route household queries to household_status"
+        )
+        assert "household_status" in content.split("## Call Flow")[1], (
+            "Call Flow must reference household_status for cross-agent queries"
+        )
+
+    def test_prompt_keeps_musubi_recent_for_self(self):
+        prompt_path = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+        content = prompt_path.read_text(encoding="utf-8")
+        assert "musubi_recent()" in content, (
+            "Prompt must still reference musubi_recent for self queries"
+        )
 
     def test_load_persona_function(self):
         from _shared import load_persona
