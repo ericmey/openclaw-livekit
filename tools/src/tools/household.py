@@ -90,8 +90,6 @@ class HouseholdToolsMixin(Agent):
             for r in items:
                 if (r.get("created_epoch") or 0) >= cutoff:
                     rows.append(r)
-            if len(rows) >= need:
-                break
             cursor = page.get("next_cursor")
             if not cursor:
                 break

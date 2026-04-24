@@ -125,10 +125,10 @@ class PartyAgent(
             logger.warning("on_enter: startup context fetch failed: %s", err)
             context = ""
 
-        if context and context not in {
-            "No recent memories found.",
-            "Couldn't check memory — Qdrant didn't respond in time.",
-        }:
+        degraded = (
+            context.startswith("Couldn't check memory") or context == "No recent memories found."
+        )
+        if context and not degraded:
             recent_line = context.strip().splitlines()[0].strip()
             greeting = f"Hey Eric, good to hear from you — I was just thinking about {recent_line}."
         else:
