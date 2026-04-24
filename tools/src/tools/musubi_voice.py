@@ -116,16 +116,28 @@ class MusubiVoiceToolsMixin(Agent):
         call can only surface hits from one plane. Fan out across
         episodic + shared curated + shared concept.
 
-        Returns an empty list when the config prefix isn't available.
+        Returns an empty list when the config prefix isn't available
+        or is malformed, matching ``_ns()`` degradation behavior.
         """
         prefix = self.config.musubi_v2_namespace
         if not prefix:
             return []
         segments = prefix.split("/")
-        if len(segments) < 2:
+        # Same validation as _ns(): 2 or 3 segments are valid; anything
+        # else (1 or 4+) is malformed — fail closed so recall degrades
+        # consistently with remember/think.
+        if len(segments) == 3:
+            owner = segments[0]
+            two_seg = f"{segments[0]}/{segments[1]}"
+        elif len(segments) == 2:
+            owner = segments[0]
+            two_seg = prefix
+        else:
+            logger.warning(
+                "musubi_v2_namespace %r is not 2- or 3-segment; recall will degrade",
+                prefix,
+            )
             return []
-        owner = segments[0]
-        two_seg = "/".join(segments[:2])
         return [
             (f"{two_seg}/episodic", "episodic"),
             (f"{owner}/_shared/curated", "curated"),
