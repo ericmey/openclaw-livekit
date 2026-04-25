@@ -29,6 +29,14 @@ _MAX_RECENT_HOURS = 72
 _MAX_SEARCH_LIMIT = 10
 _SCROLL_MULTIPLIER = 5
 
+# Search-side state filter. Default Musubi retrieve hides `provisional` so
+# unscored ambient captures don't pollute results, but a deliberate
+# `memory_store` from another channel sits as `provisional` until the
+# hourly maturation cron runs. For explicit recall we want fresh
+# deliberate stores visible immediately — opt into provisional alongside
+# the default `(matured, promoted)`. Per Musubi v1.2.0 / state_filter API.
+_SEARCH_STATE_FILTER = ["provisional", "matured", "promoted"]
+
 
 class MemoryToolsMixin(Agent):
     """Provides ``musubi_recent`` and ``memory_store`` tools.
@@ -238,6 +246,7 @@ class MemoryToolsMixin(Agent):
                 query_text=query,
                 mode="deep",
                 limit=limit,
+                state_filter=_SEARCH_STATE_FILTER,
             )
         except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
             logger.warning("musubi_search: transient %s", err)
