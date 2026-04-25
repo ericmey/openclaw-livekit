@@ -275,6 +275,59 @@ async def test_retrieve_posts_expected_shape() -> None:
     assert "Idempotency-Key" not in call["headers"]
 
 
+@pytest.mark.asyncio
+async def test_retrieve_omits_optional_fields_when_none() -> None:
+    """`planes`, `include_archived`, `state_filter` default to omitted —
+    the wire shape stays minimal so a v1.0/v1.1 server (or any caller
+    that doesn't need the v1.2 features) sees the same body it always
+    has. Locks against an accidental `body["state_filter"] = None` that
+    would change the keyset."""
+    session = _FakeSession([_FakeResponse(200, {"results": []})])
+    await retrieve(
+        _cfg(),
+        namespace="eric/test/episodic",
+        query_text="x",
+        session=session,  # type: ignore[arg-type]
+    )
+    body = session.calls[0]["json"]
+    assert "planes" not in body
+    assert "include_archived" not in body
+    assert "state_filter" not in body
+
+
+@pytest.mark.asyncio
+async def test_retrieve_passes_state_filter_when_set() -> None:
+    """Explicit `state_filter` for fresh-save recall (Musubi v1.2.0).
+    Asserts the value reaches the wire — without this, phone Nyla
+    silently misses provisional rows even after the API extension lands."""
+    session = _FakeSession([_FakeResponse(200, {"results": []})])
+    await retrieve(
+        _cfg(),
+        namespace="nyla/*/episodic",
+        query_text="prank",
+        state_filter=["provisional", "matured", "promoted"],
+        session=session,  # type: ignore[arg-type]
+    )
+    body = session.calls[0]["json"]
+    assert body["state_filter"] == ["provisional", "matured", "promoted"]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_passes_planes_and_include_archived_when_set() -> None:
+    session = _FakeSession([_FakeResponse(200, {"results": []})])
+    await retrieve(
+        _cfg(),
+        namespace="nyla/voice",
+        query_text="x",
+        planes=["episodic", "curated"],
+        include_archived=True,
+        session=session,  # type: ignore[arg-type]
+    )
+    body = session.calls[0]["json"]
+    assert body["planes"] == ["episodic", "curated"]
+    assert body["include_archived"] is True
+
+
 # ---------------------------------------------------------------------------
 # send_thought
 # ---------------------------------------------------------------------------
