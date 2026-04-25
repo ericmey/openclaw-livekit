@@ -146,6 +146,7 @@ async def retrieve(
     limit: int = 10,
     planes: list[str] | None = None,
     include_archived: bool = False,
+    state_filter: list[str] | None = None,
     session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """POST /v1/retrieve — hybrid retrieve across planes.
@@ -172,6 +173,8 @@ async def retrieve(
         body["planes"] = planes
     if include_archived:
         body["include_archived"] = True
+    if state_filter is not None:
+        body["state_filter"] = state_filter
     return await _post(config, path="/retrieve", body=body, session=session)
 
 
@@ -361,6 +364,7 @@ class MusubiV2Client:
         limit: int = 10,
         planes: list[str] | None = None,
         include_archived: bool = False,
+        state_filter: list[str] | None = None,
         session: aiohttp.ClientSession | None = None,
     ) -> dict[str, Any]:
         return await retrieve(
@@ -371,6 +375,7 @@ class MusubiV2Client:
             limit=limit,
             planes=planes,
             include_archived=include_archived,
+            state_filter=state_filter,
             session=session,
         )
 
