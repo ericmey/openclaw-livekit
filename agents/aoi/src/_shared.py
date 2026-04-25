@@ -39,12 +39,10 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 #:
 #: Delegation allowlist is the tight version matching her prompt: she
 #: routes research to Yumi, ops to Rin, spawns herself (``aoi``) for
-#: long-running code work, hands inbox stuff to Momo, and can kick
-#: things back to Nyla for household routing. Creative and image
-#: work (hana, tama) is NOT on the list — her prompt says avoid
-#: image/selfie unless Eric explicitly asks, and the rejection here
-#: forces her to either hand to Nyla or say so plainly. Adjust as we
-#: use her and find gaps.
+#: long-running code work, and can kick things back to Nyla for
+#: household routing. Inbox / email is NOT on the list — those
+#: conversations belong with Nyla, who routes them to Momo. Creative
+#: and image work (hana, tama) likewise off-list per her prompt.
 AOI_CONFIG = AgentConfig(
     agent_name="aoi",
     memory_agent_tag="aoi-voice",
@@ -54,7 +52,6 @@ AOI_CONFIG = AgentConfig(
             "yumi",  # research / planning (her prompt's explicit default)
             "rin",  # ops / health checks (her prompt's explicit default)
             "aoi",  # spawn herself for long-running code work
-            "momo",  # inbox / email — common technical-adjacent asks
             "nyla",  # hand back to the household router on explicit ask
         }
     ),

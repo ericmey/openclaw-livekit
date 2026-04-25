@@ -145,7 +145,7 @@ class TestCoreTools:
 
 
 class TestMemoryTools:
-    """Test memory tools: musubi_recent, memory_store.
+    """Test memory tools: musubi_recent, musubi_remember.
 
     musubi_recent is validated by the greeting (model calls it on startup).
     This test focuses on explicit recall and store.
@@ -165,7 +165,7 @@ class TestMemoryTools:
                 user_input="Remember this — I have a dentist appointment next Tuesday at 2pm."
             )
             await r
-            r.expect.contains_function_call(name="memory_store")
+            r.expect.contains_function_call(name="musubi_remember")
 
 
 class TestDelegationTools:

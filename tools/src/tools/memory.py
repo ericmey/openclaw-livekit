@@ -1,9 +1,15 @@
-"""MemoryToolsMixin — musubi_recent, musubi_search, memory_store (canonical-API backed)."""
+"""MemoryToolsMixin — musubi_recent, musubi_search, musubi_remember (canonical-API backed).
+
+The voice-side tool naming mirrors the openclaw-musubi plugin:
+``musubi_remember`` (write), ``musubi_recent`` (recent scroll),
+``musubi_search`` (cross-channel semantic). Same intent on either
+surface; same name. Eric (or any model) saying "save that" gets the
+same tool name regardless of which Nyla is on the line.
+"""
 
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from typing import Any
 
@@ -25,13 +31,17 @@ logger = logging.getLogger("openclaw-livekit.agent")
 _DEGRADED_LOOKUP = "Couldn't check memory — Musubi is unavailable right now."
 _DEGRADED_STORE = "Memory didn't save — Musubi is unavailable right now."
 _MAX_RECENT_LIMIT = 20
-_MAX_RECENT_HOURS = 72
 _MAX_SEARCH_LIMIT = 10
 _SCROLL_MULTIPLIER = 5
+_DEFAULT_IMPORTANCE = 7
+# Pages of GET /v1/episodic to walk while gathering callout-worthy rows.
+# Bounded so a token-mismatch on this agent's tag doesn't spiral into
+# scrolling the whole namespace.
+_MAX_RECENT_PAGES = 5
 
 # Search-side state filter. Default Musubi retrieve hides `provisional` so
 # unscored ambient captures don't pollute results, but a deliberate
-# `memory_store` from another channel sits as `provisional` until the
+# `musubi_remember` from another channel sits as `provisional` until the
 # hourly maturation cron runs. For explicit recall we want fresh
 # deliberate stores visible immediately — opt into provisional alongside
 # the default `(matured, promoted)`. Per Musubi v1.2.0 / state_filter API.
@@ -39,7 +49,7 @@ _SEARCH_STATE_FILTER = ["provisional", "matured", "promoted"]
 
 
 class MemoryToolsMixin(Agent):
-    """Provides ``musubi_recent`` and ``memory_store`` tools.
+    """Provides ``musubi_recent``, ``musubi_search``, and ``musubi_remember`` tools.
 
     Per-agent scope: each agent reads and writes only its own episodic
     namespace (``eric/<agent>/episodic``). Cross-agent "what's been
@@ -110,18 +120,24 @@ class MemoryToolsMixin(Agent):
         tenant = segments[0]
         return f"{tenant}/*/episodic"
 
-    async def _scroll_episodic(
+    async def _scroll_episodic_recent(
         self,
         namespace: str,
-        cutoff: float,
         need: int,
         *,
-        max_pages: int = 5,
+        required_tag: str | None = None,
+        max_pages: int = _MAX_RECENT_PAGES,
     ) -> list[dict[str, Any]]:
-        """Paginate ``GET /v1/episodic`` until we have ``need`` rows
-        newer than ``cutoff`` or pages/cursors are exhausted.
+        """Paginate ``GET /v1/episodic`` until we have ``need`` recent
+        rows or pages/cursors are exhausted. Recency-ordered (newest
+        first); no time-window filter — "the last N memories" matters
+        more than "memories from the last N hours" for greeting context.
 
-        Returns a list already sorted descending by ``created_epoch``.
+        ``required_tag`` filters to rows whose ``tags`` list contains
+        the value. Used to keep the greeting hook biased toward
+        deliberate ``musubi_remember`` saves (which carry the agent's
+        ``memory_agent_tag``) and away from ambient or operationally
+        injected rows that lack it.
         """
         rows: list[dict[str, Any]] = []
         cursor: str | None = None
@@ -136,58 +152,60 @@ class MemoryToolsMixin(Agent):
             )
             items = page.get("items") or []
             for r in items:
-                if (r.get("created_epoch") or 0) >= cutoff:
-                    rows.append(r)
+                if required_tag is not None and required_tag not in (r.get("tags") or []):
+                    continue
+                rows.append(r)
             cursor = page.get("next_cursor")
-            if not cursor:
+            if not cursor or len(rows) >= need * _SCROLL_MULTIPLIER:
                 break
 
         rows.sort(key=lambda r: r.get("created_epoch") or 0, reverse=True)
-        return rows
+        return rows[:need]
 
-    async def fetch_recent_context(self, hours: int = 24, limit: int = 10) -> str:
-        """Plain-async fetch of recent memories from this agent's own namespace.
+    async def fetch_recent_context(self, limit: int = 10) -> str:
+        """Plain-async fetch of recent voice memories for this agent.
 
         Exposed without ``@function_tool`` so ``on_enter`` can prefetch
         deterministically before the LLM gets a chance to skip the tool.
 
-        Strategy: paginate ``GET /v1/episodic`` (follow ``next_cursor``
-        until we have enough), filter client-side by
-        ``created_epoch > now - hours``, sort descending, format.
-        The endpoint doesn't natively time-filter, so we over-fetch
-        and trim.
+        Recency-based — returns the last ``limit`` rows tagged by this
+        agent's voice mixin (``memory_agent_tag``), regardless of when
+        they were captured. Filtering by tag keeps operational injections
+        (smoke tests, manual API writes, anything that didn't come from
+        a deliberate ``musubi_remember`` call) out of the greeting hook
+        — those would otherwise read as "I was just thinking about
+        v1 cutover smoke." which is exactly the texture we want to avoid.
         """
-        trace(f"fetch_recent_context hours={hours} limit={limit}")
-        hours = max(1, min(hours, _MAX_RECENT_HOURS))
+        trace(f"fetch_recent_context limit={limit}")
         limit = max(1, min(limit, _MAX_RECENT_LIMIT))
-        cutoff = time.time() - (hours * 3600)
         namespace = self._own_episodic_namespace()
         if namespace is None:
             return _DEGRADED_LOOKUP
 
+        voice_tag = self.config.memory_agent_tag
+
         try:
-            rows = await self._scroll_episodic(namespace, cutoff, limit)
+            rows = await self._scroll_episodic_recent(namespace, limit, required_tag=voice_tag)
         except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
-            logger.warning("musubi_recent: transient %s", err)
+            logger.warning("fetch_recent_context: transient %s", err)
             return _DEGRADED_LOOKUP
         except MusubiV2AuthError as err:
-            logger.error("musubi_recent: auth failure: %s", err)
+            logger.error("fetch_recent_context: auth failure: %s", err)
             return _DEGRADED_LOOKUP
         except MusubiV2ClientError as err:
-            logger.error("musubi_recent: bad request: %s", err)
+            logger.error("fetch_recent_context: bad request: %s", err)
             return _DEGRADED_LOOKUP
         except MusubiV2Error as err:
-            logger.warning("musubi_recent: %s", err)
+            logger.warning("fetch_recent_context: %s", err)
             return _DEGRADED_LOOKUP
 
-        top = rows[:limit]
-        if not top:
+        if not rows:
             return "No recent memories found."
 
-        return "\n\n".join(_format_row(r) for r in top)
+        return "\n\n".join(_format_row(r) for r in rows)
 
     @function_tool
-    async def musubi_recent(self, hours: int = 24, limit: int = 10) -> str:
+    async def musubi_recent(self, limit: int = 10) -> str:
         """Fetch recent memories from your own episodic stream.
 
         Invocation Condition: Invoke this tool whenever the user asks
@@ -199,11 +217,14 @@ class MemoryToolsMixin(Agent):
         Start-of-call context is already injected into your instructions
         by the runtime — you don't need to call this tool just to greet.
 
+        Returns the most recent ``limit`` rows tagged by this voice
+        agent. Operational / ambient writes that lack the agent tag are
+        filtered out — recency, not a time window.
+
         Args:
-            hours: How many hours back to look (default 24, max 72).
             limit: Maximum number of memories to return (default 10, max 20).
         """
-        return await self.fetch_recent_context(hours=hours, limit=limit)
+        return await self.fetch_recent_context(limit=limit)
 
     @function_tool
     async def musubi_search(self, query: str, limit: int = 5) -> str:
@@ -267,7 +288,12 @@ class MemoryToolsMixin(Agent):
         return "\n\n".join(_format_search_row(r) for r in rows)
 
     @function_tool
-    async def memory_store(self, content: str, tags: list[str] | None = None) -> str:
+    async def musubi_remember(
+        self,
+        content: str,
+        topics: list[str] | None = None,
+        importance: int = _DEFAULT_IMPORTANCE,
+    ) -> str:
         """Store a memory to Musubi for future recall.
 
         Invocation Condition: Invoke this tool whenever the user asks you
@@ -278,53 +304,61 @@ class MemoryToolsMixin(Agent):
         call this tool to store the memory. Saying you'll remember it
         without calling this tool means the memory is lost.
 
+        Tool name + parameter shape match the openclaw-musubi plugin's
+        ``musubi_remember`` so saves on either surface look the same in
+        traces and to the model.
+
         Args:
             content: What to remember. Write it the way you'd want to
                 read it next time — natural language, not raw data.
-            tags: Optional keywords for retrieval (e.g. ['joke', 'eric',
+            topics: Optional keywords for retrieval (e.g. ['joke', 'eric',
                 'deploy']). Keep them short and relevant.
+            importance: 1-10. Default 7. Bump higher for things you don't
+                want demoted; lower for ambient context.
         """
-        trace(f"tool=memory_store content={content[:60]!r} tags={tags!r}")
+        trace(f"tool=musubi_remember content={content[:60]!r} topics={topics!r}")
         if not content.strip():
             return "Error: content is required."
 
-        tag_list = list(tags or [])
-        # Route the legacy ``memory_agent_tag`` into a tag so the row
-        # still carries the speaker identity — the old direct-Qdrant
-        # path wrote it into ``payload.agent``; canonical doesn't have
-        # that field. Tagging keeps filter parity for older queries.
+        topic_list = list(topics or [])
+        # The agent's ``memory_agent_tag`` (e.g. ``nyla-voice``) goes in
+        # alongside the caller's topics — that's the signal
+        # :func:`fetch_recent_context` keys on to filter the greeting
+        # hook to deliberate-save rows only.
         speaker_tag = self.config.memory_agent_tag
-        if speaker_tag and speaker_tag not in tag_list:
-            tag_list.append(speaker_tag)
+        if speaker_tag and speaker_tag not in topic_list:
+            topic_list.append(speaker_tag)
+
+        importance = max(1, min(int(importance), 10))
 
         namespace = self._own_episodic_namespace()
         if namespace is None:
             return _DEGRADED_STORE
-        idem = f"livekit-memory-store:{uuid.uuid4().hex}"
+        idem = f"livekit-musubi-remember:{uuid.uuid4().hex}"
 
         try:
             ack = await self._musubi_v2_client().capture_memory(
                 namespace=namespace,
                 content=content,
-                tags=tag_list,
-                importance=7,
+                tags=topic_list,
+                importance=importance,
                 idempotency_key=idem,
             )
         except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
-            logger.warning("memory_store: transient %s", err)
+            logger.warning("musubi_remember: transient %s", err)
             return _DEGRADED_STORE
         except MusubiV2AuthError as err:
-            logger.error("memory_store: auth failure: %s", err)
+            logger.error("musubi_remember: auth failure: %s", err)
             return "Memory didn't save — auth failed."
         except MusubiV2ClientError as err:
-            logger.error("memory_store: bad request: %s", err)
+            logger.error("musubi_remember: bad request: %s", err)
             return "Memory didn't save — request rejected."
         except MusubiV2Error as err:
-            logger.warning("memory_store: %s", err)
+            logger.warning("musubi_remember: %s", err)
             return "Memory didn't save — unknown error."
 
         object_id = ack.get("object_id") or "<unknown>"
-        trace(f"tool=memory_store DONE id={object_id}")
+        trace(f"tool=musubi_remember DONE id={object_id}")
         return "Got it, stored."
 
 

@@ -120,21 +120,48 @@ class PartyAgent(
         # at session start without a preceding user turn, so we build a
         # greeting string and use session.say() instead.
         try:
-            context = await self.fetch_recent_context(hours=24, limit=10)
+            context = await self.fetch_recent_context(limit=10)
         except Exception as err:
             logger.warning("on_enter: startup context fetch failed: %s", err)
             context = ""
 
-        degraded = (
-            context.startswith("Couldn't check memory") or context == "No recent memories found."
-        )
-        if context and not degraded:
-            recent_line = context.strip().splitlines()[0].strip()
-            greeting = f"Hey Eric, good to hear from you — I was just thinking about {recent_line}."
+        callout = _greeting_callout(context)
+        if callout:
+            greeting = f"Hey Eric, good to hear from you — I was just thinking about {callout}."
         else:
             greeting = "Hey Eric, good to hear from you."
 
         await self.session.say(greeting)
+
+
+# Length window for the "I was just thinking about ..." opener. Below
+# the floor reads as a fragment ("Got it, stored."); above the ceiling
+# reads like the agent is reading off a log line. The window's a
+# heuristic, not a guarantee — fetch_recent_context already filters
+# out operational rows by tag, this just guards against the ones that
+# don't quote naturally.
+_CALLOUT_MIN_LEN = 30
+_CALLOUT_MAX_LEN = 200
+
+
+def _greeting_callout(context: str) -> str | None:
+    """Pick a callout-worthy fragment from the formatted recent context,
+    or return ``None`` if nothing reads naturally as "I was just thinking
+    about X". Strips the ``[speaker]`` prefix added by ``_format_row``
+    and trims any trailing period so the outer template adds it cleanly."""
+    if not context:
+        return None
+    if context.startswith("Couldn't check memory") or context == "No recent memories found.":
+        return None
+    line = context.strip().splitlines()[0].strip()
+    if line.startswith("["):
+        end = line.find("]")
+        if end > 0:
+            line = line[end + 1 :].strip()
+    line = line.rstrip(".")
+    if not (_CALLOUT_MIN_LEN <= len(line) <= _CALLOUT_MAX_LEN):
+        return None
+    return line
 
 
 # --- server + session --------------------------------------------------

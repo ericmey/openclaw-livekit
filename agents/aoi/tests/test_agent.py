@@ -82,7 +82,7 @@ class TestAgentClass:
             "get_current_time",
             "get_weather",
             "musubi_recent",
-            "memory_store",
+            "musubi_remember",
             "sessions_send",
             "sessions_spawn",
             "academy_selfie",
@@ -106,13 +106,16 @@ class TestAgentClass:
 
     def test_config_delegation_allowlist_matches_persona(self, agent_module):
         """Aoi's prompt commits to specific default routing — research to
-        Yumi, ops to Rin, code to herself, inbox to Momo, handoff to Nyla.
-        Creative/image work (Hana, Tama) is deliberately OFF the list so
-        she's forced to route those back through Nyla instead of doing them."""
+        Yumi, ops to Rin, code to herself, handoff to Nyla. Inbox / email
+        is deliberately OFF the list (those conversations belong with
+        Nyla, who routes them to Momo). Creative/image work (Hana, Tama)
+        is also off so she's forced to route those back through Nyla
+        instead of doing them."""
         cfg = agent_module.AoiAgent.config
         allowed = cfg.allowed_delegation_targets
         assert allowed is not None, "Aoi should have a bounded delegation set"
-        assert {"yumi", "rin", "aoi", "momo", "nyla"} <= allowed
+        assert {"yumi", "rin", "aoi", "nyla"} <= allowed
+        assert "momo" not in allowed
         assert "hana" not in allowed
         assert "tama" not in allowed
 

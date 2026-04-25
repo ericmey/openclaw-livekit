@@ -19,11 +19,11 @@ exposes them to the voice model as callable tools.
 |---|---|---|---|---|
 | `get_current_time` | [core.py](src/tools/core.py) | `CoreToolsMixin` | Current local date + time on the server | — |
 | `get_weather` | [core.py](src/tools/core.py) | `CoreToolsMixin` | Current weather in Carmel, IN | — |
-| `musubi_recent` | [memory.py](src/tools/memory.py) | `MemoryToolsMixin` | Recent memories across the household (alpha Musubi, direct Qdrant) | `hours=24`, `limit=10` |
-| `memory_store` | [memory.py](src/tools/memory.py) | `MemoryToolsMixin` | Persist a memory for future recall (alpha Musubi, direct Qdrant) | `content`, `tags=[]` |
-| `musubi_recall` | [musubi_voice.py](src/tools/musubi_voice.py) | `MusubiVoiceToolsMixin` | Hybrid retrieve across Musubi planes (**new** canonical API) | `query`, `limit=5` |
-| `musubi_remember` | [musubi_voice.py](src/tools/musubi_voice.py) | `MusubiVoiceToolsMixin` | Explicit episodic capture at importance 7 (**new** canonical API) | `content`, `tags=[]`, `importance=7` |
-| `musubi_think` | [musubi_voice.py](src/tools/musubi_voice.py) | `MusubiVoiceToolsMixin` | Presence-to-presence thought delivery (**new** canonical API) | `to_agent`, `content`, `channel="default"` |
+| `musubi_recent` | [memory.py](src/tools/memory.py) | `MemoryToolsMixin` | Recent voice-channel memories (recency-ordered, agent-tag filtered) | `limit=10` |
+| `musubi_search` | [memory.py](src/tools/memory.py) | `MemoryToolsMixin` | Cross-channel hybrid retrieve (`<tenant>/*/episodic`, deep mode, includes provisional) | `query`, `limit=5` |
+| `musubi_remember` | [memory.py](src/tools/memory.py) | `MemoryToolsMixin` | Persist a memory for future recall (canonical Musubi episodic) | `content`, `topics=[]`, `importance=7` |
+| `musubi_recall` | [musubi_voice.py](src/tools/musubi_voice.py) | `MusubiVoiceToolsMixin` | Legacy alias: hybrid retrieve via the older voice-tools mixin | `query`, `limit=5` |
+| `musubi_think` | [musubi_voice.py](src/tools/musubi_voice.py) | `MusubiVoiceToolsMixin` | Presence-to-presence thought delivery (canonical API) | `to_agent`, `content`, `channel="default"` |
 | `sessions_send` | [sessions.py](src/tools/sessions.py) | `SessionsToolsMixin` | Send a task/message to another AI agent | `agent_id`, `message`, `deliver_to="room"` |
 | `sessions_spawn` | [sessions.py](src/tools/sessions.py) | `SessionsToolsMixin` | Spawn a new agent session to handle a task | `agent_id`, `task`, `deliver_to="room"` |
 | `academy_selfie` | [academy.py](src/tools/academy.py) | `AcademyToolsMixin` | Request a selfie of the speaking agent from Mizuki | `mood`, `nsfw=False` |

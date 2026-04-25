@@ -82,7 +82,7 @@ class BaseRealtimeAgent(
         # no awareness of what happened overnight. Fold a compact summary
         # into the greeting instruction so it's guaranteed to be there.
         try:
-            context = await self.fetch_recent_context(hours=24, limit=10)
+            context = await self.fetch_recent_context(limit=10)
         except Exception as err:
             logger.warning("on_enter: startup context fetch failed: %s", err)
             context = ""

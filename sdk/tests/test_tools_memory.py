@@ -1,4 +1,4 @@
-"""Tests for MemoryToolsMixin — musubi_recent, musubi_search, memory_store, fetch_recent_context."""
+"""Tests for MemoryToolsMixin — musubi_recent, musubi_search, musubi_remember, fetch_recent_context."""
 
 from typing import Any, cast
 
@@ -26,9 +26,9 @@ def test_memory_mixin_has_musubi_search():
     assert callable(MemoryToolsMixin.musubi_search)
 
 
-def test_memory_mixin_has_memory_store():
-    assert hasattr(MemoryToolsMixin, "memory_store")
-    assert callable(MemoryToolsMixin.memory_store)
+def test_memory_mixin_has_musubi_remember():
+    assert hasattr(MemoryToolsMixin, "musubi_remember")
+    assert callable(MemoryToolsMixin.musubi_remember)
 
 
 def test_memory_mixin_exposes_fetch_recent_context_helper():
@@ -64,7 +64,7 @@ def test_composed_agent_has_memory_tools(agent):
     """Memory tools are discoverable on a composed agent instance."""
     assert hasattr(agent, "musubi_recent")
     assert hasattr(agent, "musubi_search")
-    assert hasattr(agent, "memory_store")
+    assert hasattr(agent, "musubi_remember")
     assert hasattr(agent, "fetch_recent_context")
     # Default composed agent doesn't override, so tag is "nyla-voice".
     assert agent.config.memory_agent_tag == "nyla-voice"
@@ -137,7 +137,7 @@ async def test_musubi_search_uses_tenant_wildcard_namespace(agent):
 @pytest.mark.asyncio
 async def test_musubi_search_passes_state_filter_for_fresh_save_recall(agent):
     """The whole point of musubi_search is recalling a deliberate
-    memory_store BEFORE the maturation cron runs (otherwise voice-Nyla
+    musubi_remember BEFORE the maturation cron runs (otherwise voice-Nyla
     can't remember what Openclaw-Nyla just saved). Asserts state_filter
     explicitly includes `provisional` so fresh stores are visible."""
     stub = _StubClient(response={"results": []})

@@ -4,7 +4,7 @@ EXPECTED_TOOLS = [
     "get_current_time",
     "get_weather",
     "musubi_recent",
-    "memory_store",
+    "musubi_remember",
     "sessions_send",
     "sessions_spawn",
     "academy_selfie",
