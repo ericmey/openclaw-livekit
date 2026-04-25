@@ -1,4 +1,4 @@
-"""MemoryToolsMixin — musubi_recent, memory_store (canonical-API backed)."""
+"""MemoryToolsMixin — musubi_recent, musubi_search, memory_store (canonical-API backed)."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ _DEGRADED_LOOKUP = "Couldn't check memory — Musubi is unavailable right now."
 _DEGRADED_STORE = "Memory didn't save — Musubi is unavailable right now."
 _MAX_RECENT_LIMIT = 20
 _MAX_RECENT_HOURS = 72
+_MAX_SEARCH_LIMIT = 10
 _SCROLL_MULTIPLIER = 5
 
 
@@ -74,6 +75,32 @@ class MemoryToolsMixin(Agent):
             )
             return None
         return f"{prefix}/episodic"
+
+    def _tenant_wildcard_episodic_namespace(self) -> str | None:
+        """Resolve a tenant-wide wildcard namespace for cross-channel search.
+
+        Per Musubi ADR 0031: ``<tenant>/*/episodic`` fans an episodic
+        retrieve across every channel the tenant has captured into. For
+        Nyla on the voice channel that means voice + openclaw + discord
+        + any future surface — all read in one call. The agent still
+        knows where each row came from because every result row carries
+        its concrete stored namespace.
+
+        Returns ``None`` when the agent's namespace is malformed (same
+        degradation path as :meth:`_own_episodic_namespace`).
+        """
+        prefix = self.config.musubi_v2_namespace or self.config.musubi_v2_presence
+        if not prefix:
+            prefix = f"eric/{self.config.agent_name}"
+        segments = prefix.split("/")
+        if len(segments) != 2:
+            logger.warning(
+                "musubi_v2_namespace/presence %r is not 2-segment; tenant-wide search will degrade",
+                prefix,
+            )
+            return None
+        tenant = segments[0]
+        return f"{tenant}/*/episodic"
 
     async def _scroll_episodic(
         self,
@@ -171,6 +198,66 @@ class MemoryToolsMixin(Agent):
         return await self.fetch_recent_context(hours=hours, limit=limit)
 
     @function_tool
+    async def musubi_search(self, query: str, limit: int = 5) -> str:
+        """Semantic-search your memory across every channel you've spoken on.
+
+        Invocation Condition: Invoke this tool when the user asks about
+        a SPECIFIC topic, fact, or event you might know about — anything
+        that isn't just "what did we talk about recently". Examples:
+        "Do you remember the prank we discussed?", "What do you know
+        about the dentist appointment?", "Did I tell you about the
+        Stable Diffusion update?", "What's the deploy plan you saved?"
+
+        Unlike musubi_recent (which is your VOICE channel only, last
+        24h), this searches across voice + Openclaw + Discord + every
+        other surface you exist on. If the user told Openclaw-you to
+        remember something, THIS is the tool that finds it on a phone
+        call. Each result row carries its origin namespace so you can
+        say "we talked about that on Openclaw" vs "on our last call".
+
+        You MUST call this tool when answering recall questions. Saying
+        "I remember…" without calling this tool is hallucination.
+
+        Args:
+            query: What you're searching for. Plain English; the server
+                runs hybrid + rerank.
+            limit: Max rows to return (default 5).
+        """
+        trace(f"tool=musubi_search query={query[:60]!r} limit={limit}")
+        if not query.strip():
+            return "Error: query is required."
+        limit = max(1, min(limit, _MAX_SEARCH_LIMIT))
+
+        namespace = self._tenant_wildcard_episodic_namespace()
+        if namespace is None:
+            return _DEGRADED_LOOKUP
+
+        try:
+            response = await self._musubi_v2_client().retrieve(
+                namespace=namespace,
+                query_text=query,
+                mode="deep",
+                limit=limit,
+            )
+        except (MusubiV2TimeoutError, MusubiV2ServerError) as err:
+            logger.warning("musubi_search: transient %s", err)
+            return _DEGRADED_LOOKUP
+        except MusubiV2AuthError as err:
+            logger.error("musubi_search: auth failure: %s", err)
+            return _DEGRADED_LOOKUP
+        except MusubiV2ClientError as err:
+            logger.error("musubi_search: bad request: %s", err)
+            return _DEGRADED_LOOKUP
+        except MusubiV2Error as err:
+            logger.warning("musubi_search: %s", err)
+            return _DEGRADED_LOOKUP
+
+        rows = response.get("results") or []
+        if not rows:
+            return "No memories matched."
+        return "\n\n".join(_format_search_row(r) for r in rows)
+
+    @function_tool
     async def memory_store(self, content: str, tags: list[str] | None = None) -> str:
         """Store a memory to Musubi for future recall.
 
@@ -247,6 +334,19 @@ def _format_row(row: dict[str, Any]) -> str:
     speaker = agent_tag.removesuffix("-voice") if agent_tag else (row.get("namespace") or "?")
     content = (row.get("content") or "").strip()
     return f"[{speaker}] {content}"
+
+
+def _format_search_row(row: dict[str, Any]) -> str:
+    """One-line render for a retrieve hit. Surfaces the row's origin
+    channel (the ``presence`` segment of the stored namespace) so the
+    LLM can attribute "you told me this on Openclaw" vs "on our last
+    call". Falls back to the raw namespace if the row's namespace
+    isn't 3-segment for any reason."""
+    ns = row.get("namespace") or ""
+    parts = ns.split("/")
+    channel = parts[1] if len(parts) >= 2 else ns or "?"
+    content = (row.get("content") or "").strip()
+    return f"[{channel}] {content}"
 
 
 __all__ = ["MemoryToolsMixin"]

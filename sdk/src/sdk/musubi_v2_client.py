@@ -144,6 +144,8 @@ async def retrieve(
     query_text: str,
     mode: str = "fast",
     limit: int = 10,
+    planes: list[str] | None = None,
+    include_archived: bool = False,
     session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """POST /v1/retrieve — hybrid retrieve across planes.
@@ -152,13 +154,24 @@ async def retrieve(
     rerank). Voice tools default to "deep" for recall (the user waited
     to ask; give them the best hit) but "fast" is available for
     latency-sensitive supplements.
+
+    `namespace` accepts the canonical shapes (Musubi ADRs 0028 + 0031):
+    3-segment concrete (`<tenant>/<presence>/<plane>`), 2-segment
+    cross-plane (`<tenant>/<presence>` + `planes`), or wildcard with
+    `*` replacing any segment (e.g. `nyla/*/episodic` for cross-channel
+    recall within a tenant). Wildcards are read-only — captures still
+    write to the channel-tagged 3-segment slot.
     """
-    body = {
+    body: dict[str, Any] = {
         "namespace": namespace,
         "query_text": query_text,
         "mode": mode,
         "limit": limit,
     }
+    if planes is not None:
+        body["planes"] = planes
+    if include_archived:
+        body["include_archived"] = True
     return await _post(config, path="/retrieve", body=body, session=session)
 
 
@@ -346,6 +359,8 @@ class MusubiV2Client:
         query_text: str,
         mode: str = "fast",
         limit: int = 10,
+        planes: list[str] | None = None,
+        include_archived: bool = False,
         session: aiohttp.ClientSession | None = None,
     ) -> dict[str, Any]:
         return await retrieve(
@@ -354,6 +369,8 @@ class MusubiV2Client:
             query_text=query_text,
             mode=mode,
             limit=limit,
+            planes=planes,
+            include_archived=include_archived,
             session=session,
         )
 
